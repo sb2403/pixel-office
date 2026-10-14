@@ -2,7 +2,6 @@ import type { Agent, OfficeEvent, Point, Scene, StationId, Walk } from '../types
 import { narrate } from './narrate'
 import { lookFor } from './sprites'
 import {
-  DESK_COUNT,
   WAITING_TOOLS,
   WIDTH,
   clamp,
@@ -131,8 +130,9 @@ function nextDesk(scene: Scene): number {
       .filter(a => a.phase !== 'gone' && a.desk >= 0)
       .map(a => a.desk),
   )
-  for (let desk = 0; desk < DESK_COUNT; desk++) if (!used.has(desk)) return desk
-  return scene.order.length % DESK_COUNT
+  let desk = 0
+  while (used.has(desk)) desk += 1
+  return desk
 }
 
 function arrive(scene: Scene, id: string, type: string, label: string, at: number): Agent {

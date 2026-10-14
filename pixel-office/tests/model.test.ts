@@ -223,6 +223,15 @@ describe('review focus', () => {
     expect(spots.size).toBe(12)
   })
 
+  test("desks overflow into a queue, never onto someone else's seat", async () => {
+    let s = emptyScene()
+    for (let i = 0; i < 10; i++) s = reduce(s, spawn(`d${i}`, 1000))
+    for (let i = 0; i < 10; i++) s = reduce(s, start(`d${i}`, 'Edit', 'f.ts', `e${i}`, 2000))
+    const seated = Object.values(s.agents).filter(a => a.station === 'desk')
+    expect(new Set(seated.map(a => `${a.pos.x},${a.pos.y}`)).size).toBe(10)
+    expect(seated.map(a => a.desk).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
   test('the ticker keeps only the last 8 lines', async () => {
     let s = emptyScene()
     for (let i = 0; i < 20; i++) s = reduce(s, start(MAIN, 'Read', `f${i}.ts`, `c${i}`, i))
