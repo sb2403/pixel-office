@@ -33,7 +33,7 @@ From a terminal Claude Code session:
 /plugin install pixel-office --marketplace sb2403/pixel-office
 ```
 
-Answer `y` when it asks, and choose user scope. After that the mod loads in desktop sessions too. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
+Answer `y` when it asks, and choose user scope. The install also shows an options screen for `autoOpen` (when the office opens by itself: `on-first-subagent`, `session-start` or `never`; see Options below), so pick one there or keep the default. To skip the screen, set it on the command line with `--config autoOpen=…`. After that the mod loads in desktop sessions too. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
 
 ## Options
 
@@ -43,31 +43,41 @@ Answer `y` when it asks, and choose user scope. After that the mod loads in desk
 - `session-start`: as soon as a session starts.
 - `never`: only when you run `/office`.
 
-Set it while installing:
+Set it while installing, instead of answering the options screen:
 
 ```bash
 claude plugin install pixel-office --marketplace sb2403/pixel-office --config autoOpen=session-start
 ```
 
-or change it later from the plugin's options (`claude plugin configure pixel-office` lists them).
+To change it later, run `/plugin configure pixel-office@pixel-office` inside Claude Code, or save the value from a terminal by piping a JSON object to `configure`:
 
-## Updating
+```bash
+echo '{"autoOpen":"never"}' | claude plugin configure pixel-office@pixel-office --values-stdin
+```
 
-Installed sessions run the installed copy of the mod, not the files in this repository, so a change only reaches them once it is published as a new version. After changing the mod, raise `version` in `pixel-office/.claude-plugin/plugin.json`, then:
+Either way the new value applies to sessions you start afterwards. `claude plugin configure pixel-office@pixel-office` on its own only shows the options and whether each is set; it changes nothing.
+
+## Updating (users)
+
+Installed sessions run the installed copy of the mod, not the files in this repository, so a change only reaches you once the maintainer has published a new version. To get it:
 
 ```bash
 claude plugin marketplace update pixel-office
 claude plugin update pixel-office@pixel-office
 ```
 
-and start a new session. (`pixel-office` is the name this marketplace registers under, however it was added.)
+Then start a new session. (`pixel-office` is the name this marketplace registers under, however it was added.)
+
+## Releasing a change (maintainers)
+
+Raise `version` in `pixel-office/.claude-plugin/plugin.json`, commit, and push. Without a new version, installed copies do not pick up the change. Users then follow Updating (users) above.
 
 ## Good to know
 
 - It is built on an early-access mod API that may change between Claude Code releases, so a new release can need a new version of this mod.
 - An organization policy can disable mods. If yours does, the office will not load.
 - Cost: it uses no model tokens. The only thing that enters your conversation is the one-line reply to `/office`.
-- Privacy: it reads tool names, file names and commands inside your own Claude Code in order to draw them. It sends nothing anywhere.
+- Privacy: it reads tool names, file names, commands, search patterns, web hosts and the short task descriptions helpers are given, inside your own Claude Code, only to draw the office. It sends nothing anywhere.
 
 ## Develop
 
