@@ -19,7 +19,7 @@ export const clamp = (value: number, lo: number, hi: number): number => Math.min
 // What XML 1.0 refuses: everything below space except tab, line feed and carriage return, delete, the two
 // non-characters U+FFFE and U+FFFF, and any UTF-16 surrogate that is not half of a proper pair. The first
 // alternative is a proper pair, which is kept (`$1`); a surrogate it did not take is a lone one and goes.
-const UNSAFE = /([\uD800-\uDBFF][\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uD800-\uDFFF￾￿]/g
+const UNSAFE = /([\uD800-\uDBFF][\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uD800-\uDFFF\uFFFE\uFFFF]/g
 
 export const stripControls = (text: string): string => text.replace(UNSAFE, '$1')
 

@@ -16,7 +16,8 @@ const PANE_PROPS = {
 } as const
 const FLUSH = 1100
 
-function world(on: On, options: { isCommandBroken?: boolean } = {}) {
+// The options object is read as the hooks run, so a test can break something part way through.
+function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boolean } = {}) {
   const clock = mock.clock(on, { now: new Date(2026, 9, 14, 12, 0).getTime() })
   mock.store(on)
   const opened: string[] = []
@@ -25,6 +26,9 @@ function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   let latestSelected: string | null | undefined
   // The test's `$` has no `state` noun, so the scene is read from what the plugin writes.
   on('state.set', SCENE, ($, e, next) => {
+    // A hook that throws is skipped by the engine, so a write that cannot land is a refusal that never gives way:
+    // `update` retries it and then gives up.
+    if (options.isSceneBroken === true) return { value: { isSet: false as const, version: 0 } }
     latest = e.value
     return next(e)
   })
@@ -260,6 +264,62 @@ test('after a /clear the office draws the new conversation from scratch', async 
   await $.turn.start({ text: 'a fresh start', turnId: 'turn-2' })
   await clock.advance(FLUSH)
   expect(ticker(scene())).toEqual(['You gave Main a new task'])
+})
+
+test('a batch a flush has already taken is not applied after a /clear', async ($, on) => {
+  const { clock, scene } = world(on)
+  // Hold the flush at its first read of the scene, after it has swapped the queue, so the /clear lands mid-flush.
+  let isHeld = false
+  let reached: () => void = () => {}
+  let release: () => void = () => {}
+  const isAtGate = new Promise<void>(resolve => {
+    reached = resolve
+  })
+  on('state.get', SCENE, async ($, e, next) => {
+    if (!isHeld) return next(e)
+    isHeld = false
+    reached()
+    await new Promise<void>(resolve => {
+      release = resolve
+    })
+    return next(e)
+  })
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  isHeld = true
+  await clock.advance(FLUSH)
+  await isAtGate
+  await $.session.end(endSession('clear'))
+  release()
+  await clock.advance(FLUSH)
+  expect(Object.keys(scene()?.agents ?? {})).toEqual(['main'])
+  expect(ticker(scene())).toEqual([])
+})
+
+test('a /clear still lets the session end when the office cannot be reset', async ($, on) => {
+  const options = { isSceneBroken: false }
+  const { clock, selected } = world(on, options)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-agent-1' })
+  expect(selected()).toBe('agent-1')
+  options.isSceneBroken = true
+  const ended = await $.session.end(endSession('clear'))
+  expect(ended).toEqual({ sessionId: 's-1' })
+  // Each reset stands alone: the failed scene write does not keep the selection from clearing.
+  expect(selected()).toBeNull()
+})
+
+test('a selected id that is not in the scene gets no job clock', async ($, on) => {
+  const { clock, clockWrites } = world(on)
+  // Stands in for a selection whose agent has since been pruned from the scene.
+  on('state.get', SELECTED, () => ({ value: { value: 'pruned-agent', version: 1 } }))
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(5000)
+  expect(clockWrites).toEqual([])
 })
 
 test('a session that ends for any other reason leaves the office alone', async ($, on) => {

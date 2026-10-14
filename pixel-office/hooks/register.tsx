@@ -26,7 +26,15 @@ const quietly = async (work: () => Promise<void> | void): Promise<void> => {
   }
 }
 
-type Office = { queue: OfficeEvent[]; isFlushing: boolean; flushes: number; isOpened: boolean; wantsOpen: boolean }
+// `epoch` counts the /clears: a flush notes it when it takes the queue, so it can tell its batch has gone stale.
+type Office = {
+  queue: OfficeEvent[]
+  isFlushing: boolean
+  flushes: number
+  isOpened: boolean
+  wantsOpen: boolean
+  epoch: number
+}
 
 // The engine only lets `$` travel into functions declared at the top of this file, so the helpers that
 // take it live here and share the mutable bits through one plain object.
@@ -42,10 +50,14 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     office.flushes += 1
     const now = await $.clock.now()
     const batch = office.queue
+    const epoch = office.epoch
     office.queue = []
     const isSweepTurn = office.flushes % SWEEP_EVERY === 0
     if (batch.length === 0 && !(isSweepTurn && needsSweep(await read($, sceneAtom), now))) return
     await update($, sceneAtom, scene => {
+      // A /clear since the queue was taken makes this batch (and sweep) belong to the old conversation. The
+      // updater reruns when a write misses its version, so the check holds however the two interleave.
+      if (office.epoch !== epoch) return scene
       const applied = batch.reduce(reduce, scene)
       return isSweepTurn && needsSweep(applied, now) ? reduce(applied, { kind: 'tick', at: now }) : applied
     })
@@ -72,7 +84,7 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
 
 export const register: Register = (on, options) => {
   const autoOpen = String(options.autoOpen ?? 'on-first-subagent')
-  const office: Office = { queue: [], isFlushing: false, flushes: 0, isOpened: false, wantsOpen: false }
+  const office: Office = { queue: [], isFlushing: false, flushes: 0, isOpened: false, wantsOpen: false, epoch: 0 }
 
   const push = (ev: OfficeEvent): void => {
     office.queue.push(ev)
@@ -96,9 +108,11 @@ export const register: Register = (on, options) => {
 
   on('session.end', async ($, e, next) => {
     // A /clear ends the conversation but not the process, and no session.start follows it: the office starts
-    // over, and the flush timer keeps running. Events still queued belong to the old conversation.
+    // over, and the flush timer keeps running. Events still queued belong to the old conversation, and so does
+    // a batch a flush has already taken off the queue: bumping the epoch makes that flush leave the new scene alone.
     if (e.reason === 'clear') {
       await quietly(() => {
+        office.epoch += 1
         office.queue = []
       })
       await quietly(async () => {

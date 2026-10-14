@@ -82,7 +82,7 @@ describe('clip', () => {
   })
 
   test('drops lone surrogates and the two non-characters', async () => {
-    expect(clip('a\uD800b\uDC00c￾d￿e')).toBe('abcde')
+    expect(clip('a\uD800b\uDC00c\uFFFEd\uFFFFe')).toBe('abcde')
     expect(clip('hi \uD83D')).toBe('hi')
     expect(clip('a😀b')).toBe('a😀b')
   })

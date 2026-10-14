@@ -165,8 +165,8 @@ describe('labels', () => {
   })
 
   test('escapeXml drops lone surrogates and the non-characters U+FFFE and U+FFFF', async () => {
-    expect(escapeXml('a\uD800b￿c')).toBe('abc')
-    expect(escapeXml('a\uDC00b￾c')).toBe('abc')
+    expect(escapeXml('a\uD800b\uFFFFc')).toBe('abc')
+    expect(escapeXml('a\uDC00b\uFFFEc')).toBe('abc')
     expect(escapeXml('x\uD83D')).toBe('x')
     // A whole pair is a real character and stays.
     expect(escapeXml('a😀b')).toBe('a😀b')
