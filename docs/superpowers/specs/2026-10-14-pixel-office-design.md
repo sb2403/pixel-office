@@ -77,6 +77,14 @@ desktop pane. If the reload is visibly bad, the mitigation is to raise the coale
 interval and make walks start from the agent's previous position (already the plan), so
 a restart is invisible except for loop phase.
 
+### Spike outcome (2026-10-14)
+
+Observed in the desktop pane: an `isInteractive` SVG whose source changes flickers badly on every
+redraw, an image-mode SVG (no `isInteractive`) with a changing source does not, SMIL animates in both,
+and hover tooltips never appear on this surface. So the office is drawn in image mode, and the hover
+details below become click-for-details: org chart rows are buttons, and pressing one shows that agent's
+details under the chart.
+
 ## Architecture
 
 Mod folder: `D:\Claude\Pixel Office\pixel-office\`. Each unit has one job and the pure
