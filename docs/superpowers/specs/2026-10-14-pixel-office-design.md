@@ -37,6 +37,8 @@ Verified against the mod API declarations shipped with Claude Code 2.1.295.
   `agentId`.
 - `turn.start` fires for main-loop turns only. `turn.complete` fires for every loop's
   turn, carrying `agentId` for subagents; a subagent's `turn.complete` is its hand-back.
+- `/clear` is seen as `session.end` with `reason: 'clear'`: the conversation ends, the
+  process goes on, and no `session.start` follows it.
 - `$.agent.list()` returns the session's agents with `id`, `type`, `description`,
   `status`, `parentId`, `name`, `teammateId`.
 - Settings-hook events are hookable as `classic.<Event>`: `classic.PermissionRequest`
@@ -113,12 +115,18 @@ sees engine shapes:
 - `spawned { id, parentId?, type, description, name?, isTeammate, at }`
 - `toolStarted { agentId, tool, target, callId, at }` (agentId `main` for the main loop)
 - `toolEnded { agentId, callId, isError, at }`
-- `waiting { agentId, reason, at }`: from `classic.PermissionRequest`, or a
-  `toolStarted` for AskUserQuestion or ExitPlanMode. Waiting ends with that call's
-  `toolEnded`.
-- `messaged { from, to, at }` (SendMessage)
-- `turnStarted { agentId: 'main', at }`
-- `handedBack { agentId, at }` (a subagent's `turn.complete`)
+- `waiting { agentId, tool, at }` (`agentId` is null when the permission prompt does not
+  say whose it is): from `classic.PermissionRequest`, or a `toolStarted` for
+  AskUserQuestion or ExitPlanMode. Waiting ends with that call's `toolEnded`.
+- There is no separate message event: SendMessage is a `toolStarted` like any other, and
+  the reducer special-cases it (the sender walks beside the recipient and back).
+- `todos { done, open, at }` (counts from TodoWrite and the Task tools, for the task board)
+- `turnStarted { isContinuation, at }` (Main's `turn.start`; `isContinuation` is true when
+  the turn began with no typed text, so it carries on from the one before)
+- `turnEnded { at }` (Main's `turn.complete`, the one without an `agentId`)
+- `handedBack { agentId, reason, at }` (a subagent's `turn.complete`; `reason` is
+  `answer`, `aborted`, `refusal` or `error`, which only changes the ticker wording: a
+  stopped or failed helper is reported as such instead of as handing in a report)
 - `tick { at }` (staleness sweep, from a slow clock)
 
 ### Scene model (`$.state`)
@@ -184,11 +192,16 @@ Any tool not mapped goes to the agent's desk.
 
 1. `spawned`: arrives at the elevator, walks to the meeting room; the whiteboard shows
    the task description. The parent walks over too unless it is mid-tool. Briefing lasts
-   until the subagent's first `toolStarted`, so no timer is involved.
+   until the subagent's first `toolStarted`, so the usual case needs no timer. If no event
+   comes for 60 seconds (`BRIEFING_MAX_MS`), the sweep ends the briefing itself: the agent
+   walks to its desk and is `working`, the whiteboard clears when nobody else is being
+   briefed, and a parent still waiting in the meeting room with nothing to do walks home,
+   exactly as when a first tool ends the briefing.
 2. `toolStarted`: walks to the station for the tool; plays that station's loop.
 3. `toolEnded` with `isError`: a red puff over the head.
 4. `waiting`: walks to reception; the bell rings.
-5. `messaged`: walks to the recipient's position, then back.
+5. `toolStarted` for SendMessage: walks to the recipient's position, then back (to the
+   meeting room instead when no live agent has that name).
 6. `handedBack`: carries a folder to the parent's desk, then walks to the elevator and
    leaves. Both walks are drawn in one SVG as two `animateMotion` elements, the second
    beginning when the first ends. The agent becomes `gone`; the next `tick` at least
@@ -197,6 +210,27 @@ Any tool not mapped goes to the agent's desk.
 
 `tick` comes from a `$.clock.every` started in `session.start`, every 5 s. It only
 writes state when the sweep changes something, so a quiet office causes no redraws.
+
+### Main between turns
+
+Main never leaves, but it rests. `turnStarted` puts it to work in the corner office.
+When its turn ends (`turnEnded`) it goes `idle` where it stands, with no walk and no
+activity. After a short linger (8 s) the sweep walks an idle Main back to the corner
+office if it was elsewhere, and after 10 minutes with no event it walks to the break
+room, like any other idle agent. The next `turnStarted` brings it back to the corner
+office. An office where nothing has happened yet never sends Main for coffee.
+
+### Starting over with /clear
+
+A `/clear` raises `session.end` with `reason: 'clear'` and no `session.start` after it,
+so the `session.end` hook is where the office starts over: the scene becomes an empty
+scene (Main alone, empty ticker, empty whiteboard), no agent is selected in the org chart,
+and everything from the old conversation that has not been applied yet is dropped: both the
+events still queued and any batch an in-flight flush has already taken off the queue. A
+flush notes the epoch (a counter raised on every `/clear`) when it takes the queue, and the
+scene update checks it before applying the batch or the sweep, so a stale flush leaves the
+new, empty scene alone. The flush timer started at `session.start` keeps running, since
+nothing will start it again. Any other end reason leaves the office untouched.
 
 ### Motion
 
@@ -263,10 +297,11 @@ claude plugin marketplace add "D:\Claude\Pixel Office"
 claude plugin install pixel-office@pixel-office --scope user
 ```
 
-Others install it from the public repository, from a terminal Claude Code session:
+Others install it from the public repository, from a terminal, in two steps:
 
 ```
-/plugin install pixel-office --marketplace sb2403/pixel-office
+claude plugin marketplace add sb2403/pixel-office
+claude plugin install pixel-office@pixel-office
 ```
 
 Installed sessions run the installed copy of the mod, not the files in the folder, so an

@@ -18,6 +18,7 @@ export const TICKER_MAX = 8
 export const GONE_KEEP = 50
 export const LINGER_MS = 8_000
 export const IDLE_MS = 600_000
+export const BRIEFING_MAX_MS = 60_000
 export const WALK_SPEED = 120
 
 type Ev<K extends OfficeEvent['kind']> = Extract<OfficeEvent, { kind: K }>
@@ -319,8 +320,10 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
 }
 
 function sweepTarget(agent: Agent, now: number): StationId | null {
-  if (agent.activity !== null || agent.phase === 'gone' || agent.phase === 'briefing') return null
+  if (agent.activity !== null || agent.phase === 'gone') return null
   const quiet = now - agent.lastEventAt
+  // A briefing normally ends with the agent's first tool; one that never comes must not hold the room forever.
+  if (agent.phase === 'briefing') return quiet >= BRIEFING_MAX_MS ? homeOf(agent) : null
   if (agent.phase === 'idle') {
     // Resting in the break room is the end of the road, and an office where nothing has happened yet
     // (Main's clock still reads zero) has nobody to send for coffee.
@@ -345,6 +348,7 @@ function tick(scene: Scene, at: number): Scene {
     const target = sweepTarget(agent, at)
     if (target === null) continue
     s = put(s, { ...moveTo(s, agent, target, at), phase: target === 'breakroom' || agent.phase === 'idle' ? 'idle' : 'working' })
+    if (agent.phase === 'briefing') s = endBriefing(s, agent, at)
   }
   return s
 }

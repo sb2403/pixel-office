@@ -118,7 +118,9 @@ export function agentDetails(scene: Scene, id: string, now: number): string[] {
   )
   if (boss !== undefined) lines.push(`Reports to: ${boss}`)
   if (agent.id !== MAIN) {
-    const secs = Math.max(0, Math.round((now - agent.arrivedAt) / 1000))
+    // A helper that has left stops the clock where it left.
+    const until = agent.phase === 'gone' && agent.goneAt !== null ? Math.min(now, agent.goneAt) : now
+    const secs = Math.max(0, Math.round((until - agent.arrivedAt) / 1000))
     lines.push(`On the job: ${Math.floor(secs / 60)}m ${secs % 60}s`)
   }
   return lines

@@ -16,14 +16,17 @@ export type StationDef = {
 
 export const clamp = (value: number, lo: number, hi: number): number => Math.min(Math.max(value, lo), hi)
 
-// Everything below space except tab, line feed and carriage return, plus delete: XML 1.0 refuses these.
-const CONTROLS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g
+// What XML 1.0 refuses: everything below space except tab, line feed and carriage return, delete, the two
+// non-characters U+FFFE and U+FFFF, and any UTF-16 surrogate that is not half of a proper pair. The first
+// alternative is a proper pair, which is kept (`$1`); a surrogate it did not take is a lone one and goes.
+const UNSAFE = /([\uD800-\uDBFF][\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uD800-\uDFFF\uFFFE\uFFFF]/g
 
-export const stripControls = (text: string): string => text.replace(CONTROLS, '')
+export const stripControls = (text: string): string => text.replace(UNSAFE, '$1')
 
+// Fits `text` to `max` characters, counting and cutting by code point so an emoji is never split in half.
 export function clip(text: string, max = 24): string {
-  const flat = stripControls(text.replace(/\s+/g, ' ')).trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+  const chars = Array.from(stripControls(text.replace(/\s+/g, ' ')).trim())
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('')
 }
 
 const DESK_SEATS: Point[] = Array.from({ length: DESK_COUNT }, (_, i) => ({
