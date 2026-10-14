@@ -260,7 +260,7 @@ The mod must never change or block what Claude does.
 
 ```
 claude plugin marketplace add "D:\Claude\Pixel Office"
-claude plugin install pixel-office@pixel-office-local --scope user
+claude plugin install pixel-office@pixel-office --scope user
 ```
 
 Others install it from the public repository, from a terminal Claude Code session:
@@ -274,8 +274,8 @@ edit reaches them only as a new version. After changing the mod, raise `version`
 `pixel-office/.claude-plugin/plugin.json`, then:
 
 ```
-claude plugin marketplace update pixel-office-local
-claude plugin update pixel-office@pixel-office-local
+claude plugin marketplace update pixel-office
+claude plugin update pixel-office@pixel-office
 ```
 
 and start a new session. Claude Code 2.1.295 or newer is needed to run the mod at all;
