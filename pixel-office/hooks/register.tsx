@@ -5,7 +5,7 @@ import type { OfficeEvent } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce } from './model'
 import { registerPane } from './pane'
 import { PANE, PANE_TITLE } from './state'
-import { stationFor, targetOf, todoCounts } from './stations'
+import { WAITING_TOOLS, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
 const SWEEP_EVERY = 15
@@ -80,12 +80,12 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const tool = String(e.tool)
-    const agentId = (e as unknown as { agentId?: string }).agentId ?? MAIN
+    const agentId = e.agentId ?? MAIN
     const callId = e.tool_use_id
     const isTracked = !UNTRACKED.has(tool)
     if (isTracked) {
       await quietly(async () => {
-        const input = e as unknown as Record<string, unknown>
+        const input = e as Record<string, unknown>
         const at = await $.clock.now()
         push({ kind: 'toolStarted', agentId, tool, target: targetOf(tool, input), callId, at })
         const counts = stationFor(tool) === 'taskboard' ? todoCounts(input) : null
@@ -122,21 +122,25 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
-    await quietly(async () => push({ kind: 'turnStarted', at: await $.clock.now() }))
+    // A turn started without typed text carries on from the one before.
+    await quietly(async () => push({ kind: 'turnStarted', isContinuation: e.text === '', at: await $.clock.now() }))
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
     await quietly(async () => {
-      if (e.agentId !== undefined) push({ kind: 'handedBack', agentId: e.agentId, at: await $.clock.now() })
+      const at = await $.clock.now()
+      if (e.agentId !== undefined) push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, at })
+      else push({ kind: 'turnEnded', at })
     })
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('classic.PermissionRequest', async ($, e, next) => {
     await quietly(async () => {
-      const agentId = (e as unknown as { agent_id?: string }).agent_id ?? null
-      push({ kind: 'waiting', agentId, tool: e.tool_name, at: await $.clock.now() })
+      // A question or a plan approval already moved and narrated the agent when its tool call began.
+      if (WAITING_TOOLS.has(e.tool_name)) return
+      push({ kind: 'waiting', agentId: e.agent_id ?? null, tool: e.tool_name, at: await $.clock.now() })
     })
     return next(e)
   }).catch(($, e, next) => next(e))

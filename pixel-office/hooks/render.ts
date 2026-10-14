@@ -3,7 +3,7 @@ import { MAIN, isWalkingAt, positionAt } from './model'
 import { OFFICE_DEFS, officeBase, officeDecor, rect } from './office'
 import { iconSvg, personSvg } from './sprites'
 import type { Variant } from './sprites'
-import { HEIGHT, STATIONS, WIDTH, clamp, clip, splitAt } from './stations'
+import { HEIGHT, STATIONS, WIDTH, clamp, clip, splitAt, stripControls } from './stations'
 
 export const SVG_BUDGET = 120_000
 export const PUFF_MS = 2500
@@ -22,7 +22,7 @@ const BOB: Partial<Record<StationId, number>> = {
 
 const XML: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }
 
-export const escapeXml = (text: string): string => text.replace(/[&<>"']/g, ch => XML[ch] ?? ch)
+export const escapeXml = (text: string): string => stripControls(text).replace(/[&<>"']/g, ch => XML[ch] ?? ch)
 
 const n = (v: number): number => Math.round(v * 100) / 100
 
@@ -60,6 +60,9 @@ export function orgRows(scene: Scene): OrgRow[] {
     const parent = scene.agents[agent.parentId] !== undefined ? agent.parentId : MAIN
     children.set(parent, [...(children.get(parent) ?? []), id])
   }
+  // Live agents come first among siblings so a trimmed chart keeps them; arrival order holds inside each group.
+  const isGone = (id: string): boolean => scene.agents[id]?.phase === 'gone'
+  for (const siblings of children.values()) siblings.sort((a, b) => Number(isGone(a)) - Number(isGone(b)))
   const rows: OrgRow[] = []
   const seen = new Set<string>()
   const visit = (id: string, depth: number): void => {

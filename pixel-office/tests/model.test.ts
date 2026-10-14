@@ -132,10 +132,76 @@ describe('work, errors and waiting', () => {
   })
 
   test('a new task puts Main to work in the corner office', async () => {
-    const s = reduce(emptyScene(), { kind: 'turnStarted', at: 1 })
+    const s = reduce(emptyScene(), { kind: 'turnStarted', isContinuation: false, at: 1 })
     expect(s.agents[MAIN]!.phase).toBe('working')
     expect(s.agents[MAIN]!.station).toBe('office')
     expect(lastLine(s)).toBe('You gave Main a new task')
+  })
+})
+
+describe('the end of a turn', () => {
+  const turnEnded = (at: number): OfficeEvent => ({ kind: 'turnEnded', at })
+  const turnStarted = (at: number): OfficeEvent => ({ kind: 'turnStarted', isContinuation: false, at })
+
+  test('Main goes idle at the corner office when its turn ends', async () => {
+    const s = run([turnStarted(1000), start(MAIN, 'Bash', 'npm test', 'c1', 1100), end(MAIN, 'c1', 1200)])
+    const before = s.agents[MAIN]!
+    const done = reduce(s, turnEnded(5000))
+    const main = done.agents[MAIN]!
+    expect(main.phase).toBe('idle')
+    expect(main.lastEventAt).toBe(5000)
+    expect(main.activity).toBeNull()
+    expect(main.station).toBe(before.station)
+    expect(main.walk).toBe(before.walk)
+    const home = run([turnStarted(1000), turnEnded(5000)])
+    expect(home.agents[MAIN]!.phase).toBe('idle')
+    expect(home.agents[MAIN]!.station).toBe('office')
+  })
+
+  test('a quiet idle Main goes to the break room, a new task brings it back', async () => {
+    const s = run([turnStarted(1000), turnEnded(5000)])
+    expect(needsSweep(s, 5000 + IDLE_MS - 1)).toBe(false)
+    expect(needsSweep(s, 5000 + IDLE_MS)).toBe(true)
+    const coffee = reduce(s, { kind: 'tick', at: 5000 + IDLE_MS })
+    expect(coffee.agents[MAIN]!.station).toBe('breakroom')
+    expect(coffee.agents[MAIN]!.phase).toBe('idle')
+    expect(needsSweep(coffee, 5000 + 3 * IDLE_MS)).toBe(false)
+    const back = reduce(coffee, turnStarted(5000 + IDLE_MS + 60_000))
+    expect(back.agents[MAIN]!.station).toBe('office')
+    expect(back.agents[MAIN]!.phase).toBe('working')
+  })
+
+  test('a fresh office never sends Main for coffee before anything happened', async () => {
+    const s = emptyScene()
+    expect(needsSweep(s, 100 * IDLE_MS)).toBe(false)
+    expect(reduce(s, { kind: 'tick', at: 100 * IDLE_MS })).toBe(s)
+  })
+
+  test('an idle Main away from the corner office walks back and stays idle', async () => {
+    const s = run([turnStarted(1000), start(MAIN, 'Read', 'a.ts', 'c1', 1100), end(MAIN, 'c1', 1200), turnEnded(1300)])
+    expect(s.agents[MAIN]!.station).toBe('library')
+    expect(needsSweep(s, 1300 + LINGER_MS - 1)).toBe(false)
+    expect(needsSweep(s, 1300 + LINGER_MS)).toBe(true)
+    const home = reduce(s, { kind: 'tick', at: 1300 + LINGER_MS })
+    expect(home.agents[MAIN]!.station).toBe('office')
+    expect(home.agents[MAIN]!.phase).toBe('idle')
+  })
+
+  test('a teammate resting in the break room is left alone', async () => {
+    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', at: 9000 }])
+    const later = reduce(s, { kind: 'tick', at: 9000 + 5 * IDLE_MS })
+    expect(later.agents.t1).toBe(s.agents.t1)
+    expect(later.agents.t1!.station).toBe('breakroom')
+    expect(later.agents.t1!.phase).toBe('idle')
+    expect(later.agents.t1!.walk).toBe(s.agents.t1!.walk)
+  })
+
+  test('a stopped subagent leaves like any other', async () => {
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'aborted', at: 2000 }])
+    expect(s.agents.a1!.phase).toBe('gone')
+    expect(lastLine(s)).toBe('Explore was stopped and left')
+    const failed = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'error', at: 2000 }])
+    expect(lastLine(failed)).toBe('Explore ran into a problem, reported to Main and left')
   })
 })
 
@@ -143,7 +209,7 @@ describe('hand-backs and departures', () => {
   test('a finished subagent reports to its parent and leaves by elevator', async () => {
     const s = run([spawn('a1', 1000), start('a1', 'Read', 'auth.ts', 'c1', 3000), end('a1', 'c1', 4000)])
     const main = s.agents[MAIN]!
-    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', at: 20000 })
+    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', at: 20000 })
     const a1 = done.agents.a1!
     expect(a1.phase).toBe('gone')
     expect(a1.station).toBe('elevator')
@@ -153,7 +219,7 @@ describe('hand-backs and departures', () => {
   })
 
   test('a teammate reports and takes a break instead of leaving', async () => {
-    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', at: 9000 }])
+    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', at: 9000 }])
     expect(s.agents.t1!.label).toBe('scout')
     expect(s.agents.t1!.phase).toBe('idle')
     expect(s.agents.t1!.station).toBe('breakroom')
@@ -161,7 +227,7 @@ describe('hand-backs and departures', () => {
   })
 
   test('a departed agent that works again comes back through the elevator', async () => {
-    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', at: 2000 }])
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'answer', at: 2000 }])
     const back = reduce(s, start('a1', 'Read', 'again.ts', 'c9', 60000))
     expect(back.agents.a1!.phase).toBe('working')
     expect(back.agents.a1!.goneAt).toBeNull()
@@ -172,7 +238,7 @@ describe('hand-backs and departures', () => {
     let s = emptyScene()
     for (let i = 0; i < 60; i++) {
       s = reduce(s, spawn(`x${i}`, i))
-      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, at: i + 0.5 })
+      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, reason: 'answer', at: i + 0.5 })
     }
     const gone = Object.values(s.agents).filter(a => a.phase === 'gone')
     expect(gone.length).toBe(GONE_KEEP)
@@ -242,7 +308,7 @@ describe('review focus', () => {
   test('events for unknown agents leave the scene alone', async () => {
     const s = emptyScene()
     expect(reduce(s, end('nobody', 'c1', 1))).toBe(s)
-    expect(reduce(s, { kind: 'handedBack', agentId: 'nobody', at: 1 })).toBe(s)
-    expect(reduce(s, { kind: 'handedBack', agentId: MAIN, at: 1 })).toBe(s)
+    expect(reduce(s, { kind: 'handedBack', agentId: 'nobody', reason: 'answer', at: 1 })).toBe(s)
+    expect(reduce(s, { kind: 'handedBack', agentId: MAIN, reason: 'answer', at: 1 })).toBe(s)
   })
 })

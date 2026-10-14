@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { emptyScene } from '../hooks/model'
+import { MAIN, emptyScene, reduce } from '../hooks/model'
 import { narrate } from '../hooks/narrate'
 
 const started = (tool: string, target: string, agentId = 'main') =>
@@ -30,6 +30,51 @@ test('quiet events have no line', async () => {
   expect(narrate(s, { kind: 'tick', at: 1 })).toBeNull()
   expect(narrate(s, { kind: 'todos', done: 1, open: 1, at: 1 })).toBeNull()
   expect(narrate(s, { kind: 'toolEnded', agentId: 'main', callId: 'c', isError: true, at: 1 })).toBe('Main hit an error')
-  expect(narrate(s, { kind: 'turnStarted', at: 1 })).toBe('You gave Main a new task')
+  expect(narrate(s, { kind: 'turnStarted', isContinuation: false, at: 1 })).toBe('You gave Main a new task')
   expect(narrate(s, { kind: 'waiting', agentId: 'main', tool: 'Bash', at: 1 })).toBe('Main needs your permission to use Bash')
+})
+
+test('a turn that ends leaves Main waiting for the next message', async () => {
+  expect(narrate(emptyScene(), { kind: 'turnEnded', at: 1 })).toBe('Main finished and is waiting for your next message')
+})
+
+test('a turn without a typed prompt is a continuation', async () => {
+  const s = emptyScene()
+  expect(narrate(s, { kind: 'turnStarted', isContinuation: true, at: 1 })).toBe('Main picked up where it left off')
+  expect(narrate(s, { kind: 'turnStarted', isContinuation: false, at: 1 })).toBe('You gave Main a new task')
+})
+
+test('hand-backs say whether the report came, the run was stopped or it failed', async () => {
+  const hired = reduce(emptyScene(), {
+    kind: 'spawned',
+    id: 'a1',
+    parentId: MAIN,
+    type: 'Explore',
+    description: 'find auth code',
+    name: null,
+    isTeammate: false,
+    at: 1,
+  })
+  const back = (reason: 'answer' | 'aborted' | 'refusal' | 'error') =>
+    narrate(hired, { kind: 'handedBack', agentId: 'a1', reason, at: 2 })
+  expect(back('answer')).toBe('Explore handed its report to Main and left')
+  expect(back('aborted')).toBe('Explore was stopped and left')
+  expect(back('error')).toBe('Explore ran into a problem, reported to Main and left')
+  expect(back('refusal')).toBe('Explore ran into a problem, reported to Main and left')
+})
+
+test('a teammate that is stopped still takes a break', async () => {
+  const hired = reduce(emptyScene(), {
+    kind: 'spawned',
+    id: 't1',
+    parentId: MAIN,
+    type: 'Explore',
+    description: 'scout around',
+    name: 'scout',
+    isTeammate: true,
+    at: 1,
+  })
+  const back = (reason: 'answer' | 'aborted') => narrate(hired, { kind: 'handedBack', agentId: 't1', reason, at: 2 })
+  expect(back('answer')).toBe('scout reported to Main and took a break')
+  expect(back('aborted')).toBe('scout was stopped and took a break')
 })

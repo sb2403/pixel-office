@@ -37,9 +37,27 @@ function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   on('ui.close', () => ({ value: undefined }))
   on('tool.call', ($, e) => (String(e.tool) === 'Bash' ? { deny: 'not allowed' } : { result: `ran ${String(e.tool)}`, text: 'ok' }))
   on('agent.spawn', () => ({ model: 'test-model', agentId: 'agent-1' }))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
   return { clock, opened, scene: () => latest }
+}
+
+const ticker = (scene: Scene | undefined): string[] => scene?.ticker.map(line => line.text) ?? []
+const QUESTION = {
+  tool: 'AskUserQuestion' as const,
+  tool_use_id: 'tu-q',
+  questions: [
+    {
+      question: 'Which one?',
+      header: 'Pick',
+      options: [
+        { label: 'A', description: 'The first' },
+        { label: 'B', description: 'The second' },
+      ],
+      multiSelect: false,
+    },
+  ],
 }
 
 const SPAWN = {
@@ -128,6 +146,56 @@ test('a permission prompt sends Main to reception', async ($, on) => {
   const value = scene()
   expect(value?.agents.main?.phase).toBe('waiting')
   expect(value?.agents.main?.station).toBe('reception')
+})
+
+test('a question is announced once, not again as a permission request', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.tool.call(QUESTION)
+  await $.classic.PermissionRequest({ tool_name: 'AskUserQuestion', tool_input: {} })
+  await clock.advance(FLUSH)
+  const lines = ticker(scene())
+  expect(lines.filter(line => /waiting on you/.test(line))).toHaveLength(1)
+  expect(lines.some(line => /permission/.test(line))).toBe(false)
+})
+
+test('a permission request for any other tool still says so', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } })
+  await clock.advance(FLUSH)
+  expect(ticker(scene())).toContain('Main needs your permission to use Bash')
+})
+
+test('Main is idle between turns and works during them', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'fix the login bug', turnId: 'turn-1' })
+  await clock.advance(FLUSH)
+  expect(scene()?.agents.main?.phase).toBe('working')
+  await $.turn.complete({ answer: 'done', durationMs: 5, isAborted: false, turnId: 'turn-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+  expect(scene()?.agents.main?.phase).toBe('idle')
+  expect(scene()?.agents.main?.station).toBe('office')
+  expect(ticker(scene())).toContain('Main finished and is waiting for your next message')
+})
+
+test('a turn that carries on without a prompt is a continuation', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'fix the login bug', turnId: 'turn-1' })
+  await $.turn.start({ text: '', turnId: 'turn-2' })
+  await clock.advance(FLUSH)
+  expect(ticker(scene())).toEqual(['You gave Main a new task', 'Main picked up where it left off'])
+})
+
+test('a stopped subagent is not reported as having handed in a report', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 'turn-1', agentId: 'agent-1', reason: 'aborted' })
+  await clock.advance(FLUSH)
+  expect(ticker(scene())).toContain('Explore was stopped and left')
 })
 
 test('the office command opens the pane', async ($, on) => {

@@ -282,6 +282,15 @@ function turnStarted(scene: Scene, ev: Ev<'turnStarted'>): Scene {
   return withLine(s, ev.at, narrate(s, ev))
 }
 
+// Main's turn is over: it rests where it stands until the next message. No walk; the sweep takes it
+// home after a short while and to the break room after a long one.
+function turnEnded(scene: Scene, ev: Ev<'turnEnded'>): Scene {
+  const main = scene.agents[MAIN]
+  if (main === undefined) return scene
+  const s = put(scene, { ...main, phase: 'idle', activity: null, lastEventAt: ev.at })
+  return withLine(s, ev.at, narrate(s, ev))
+}
+
 function prune(scene: Scene): Scene {
   const gone = scene.order.filter(id => scene.agents[id]?.phase === 'gone')
   if (gone.length <= GONE_KEEP) return scene
@@ -310,8 +319,15 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
 }
 
 function sweepTarget(agent: Agent, now: number): StationId | null {
-  if (agent.activity !== null || agent.phase === 'gone' || agent.phase === 'idle' || agent.phase === 'briefing') return null
+  if (agent.activity !== null || agent.phase === 'gone' || agent.phase === 'briefing') return null
   const quiet = now - agent.lastEventAt
+  if (agent.phase === 'idle') {
+    // Resting in the break room is the end of the road, and an office where nothing has happened yet
+    // (Main's clock still reads zero) has nobody to send for coffee.
+    if (agent.station === 'breakroom' || agent.lastEventAt === 0) return null
+    if (quiet >= IDLE_MS) return 'breakroom'
+    return quiet >= LINGER_MS && agent.station !== homeOf(agent) ? homeOf(agent) : null
+  }
   if (quiet >= IDLE_MS) return 'breakroom'
   if (quiet >= LINGER_MS && agent.station !== homeOf(agent)) return homeOf(agent)
   return null
@@ -328,7 +344,7 @@ function tick(scene: Scene, at: number): Scene {
     if (agent === undefined) continue
     const target = sweepTarget(agent, at)
     if (target === null) continue
-    s = put(s, { ...moveTo(s, agent, target, at), phase: target === 'breakroom' ? 'idle' : 'working' })
+    s = put(s, { ...moveTo(s, agent, target, at), phase: target === 'breakroom' || agent.phase === 'idle' ? 'idle' : 'working' })
   }
   return s
 }
@@ -345,6 +361,8 @@ export function reduce(scene: Scene, ev: OfficeEvent): Scene {
       return waiting(scene, ev)
     case 'turnStarted':
       return turnStarted(scene, ev)
+    case 'turnEnded':
+      return turnEnded(scene, ev)
     case 'handedBack':
       return handedBack(scene, ev)
     case 'todos':

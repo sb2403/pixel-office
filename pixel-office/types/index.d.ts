@@ -66,8 +66,9 @@ export type OfficeEvent =
   | { kind: 'toolStarted'; agentId: string; tool: string; target: string; callId: string; at: number }
   | { kind: 'toolEnded'; agentId: string; callId: string; isError: boolean; at: number }
   | { kind: 'waiting'; agentId: string | null; tool: string; at: number }
-  | { kind: 'turnStarted'; at: number }
-  | { kind: 'handedBack'; agentId: string; at: number }
+  | { kind: 'turnStarted'; isContinuation: boolean; at: number }
+  | { kind: 'turnEnded'; at: number }
+  | { kind: 'handedBack'; agentId: string; reason: 'answer' | 'aborted' | 'refusal' | 'error'; at: number }
   | { kind: 'todos'; done: number; open: number; at: number }
   | { kind: 'tick'; at: number }
 

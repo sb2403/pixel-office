@@ -16,8 +16,13 @@ export type StationDef = {
 
 export const clamp = (value: number, lo: number, hi: number): number => Math.min(Math.max(value, lo), hi)
 
+// Everything below space except tab, line feed and carriage return, plus delete: XML 1.0 refuses these.
+const CONTROLS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g
+
+export const stripControls = (text: string): string => text.replace(CONTROLS, '')
+
 export function clip(text: string, max = 24): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
+  const flat = stripControls(text.replace(/\s+/g, ' ')).trim()
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 

@@ -57,6 +57,11 @@ describe('targetOf', () => {
     expect(targetOf('mcp__github__create_issue', { title: 'Bug' })).toBe('github')
     expect(targetOf('Mystery', {})).toBe('')
   })
+
+  test('drops control characters from what it shows', async () => {
+    expect(targetOf('Bash', { command: 'echo \x1b[31mred\x1b[0m\x07' })).toBe('echo [31mred[0m')
+    expect(targetOf('Read', { file_path: '/work/\x00odd\x7f.ts' })).toBe('odd.ts')
+  })
 })
 
 describe('todoCounts', () => {

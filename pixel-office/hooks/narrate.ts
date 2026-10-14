@@ -58,14 +58,21 @@ export function narrate(scene: Scene, ev: OfficeEvent): string | null {
     case 'waiting':
       return `${nameOf(scene, ev.agentId)} needs your permission to use ${ev.tool}`
     case 'turnStarted':
-      return 'You gave Main a new task'
+      return ev.isContinuation ? 'Main picked up where it left off' : 'You gave Main a new task'
+    case 'turnEnded':
+      return 'Main finished and is waiting for your next message'
     case 'handedBack': {
       const agent = scene.agents[ev.agentId]
       if (agent === undefined) return null
       const boss = nameOf(scene, agent.parentId)
-      return agent.isTeammate
-        ? `${agent.label} reported to ${boss} and took a break`
-        : `${agent.label} handed its report to ${boss} and left`
+      const isStopped = ev.reason === 'aborted'
+      const isFailed = ev.reason === 'error' || ev.reason === 'refusal'
+      if (agent.isTeammate) {
+        return isStopped ? `${agent.label} was stopped and took a break` : `${agent.label} reported to ${boss} and took a break`
+      }
+      if (isStopped) return `${agent.label} was stopped and left`
+      if (isFailed) return `${agent.label} ran into a problem, reported to ${boss} and left`
+      return `${agent.label} handed its report to ${boss} and left`
     }
     case 'todos':
     case 'tick':
