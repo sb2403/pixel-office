@@ -225,9 +225,12 @@ office. An office where nothing has happened yet never sends Main for coffee.
 A `/clear` raises `session.end` with `reason: 'clear'` and no `session.start` after it,
 so the `session.end` hook is where the office starts over: the scene becomes an empty
 scene (Main alone, empty ticker, empty whiteboard), no agent is selected in the org chart,
-and events still queued from the old conversation are dropped. The flush timer started at
-`session.start` keeps running, since nothing will start it again. Any other end reason
-leaves the office untouched.
+and everything from the old conversation that has not been applied yet is dropped: both the
+events still queued and any batch an in-flight flush has already taken off the queue. A
+flush notes the epoch (a counter raised on every `/clear`) when it takes the queue, and the
+scene update checks it before applying the batch or the sweep, so a stale flush leaves the
+new, empty scene alone. The flush timer started at `session.start` keeps running, since
+nothing will start it again. Any other end reason leaves the office untouched.
 
 ### Motion
 
@@ -294,10 +297,11 @@ claude plugin marketplace add "D:\Claude\Pixel Office"
 claude plugin install pixel-office@pixel-office --scope user
 ```
 
-Others install it from the public repository, from a terminal Claude Code session:
+Others install it from the public repository, from a terminal, in two steps:
 
 ```
-/plugin install pixel-office --marketplace sb2403/pixel-office
+claude plugin marketplace add sb2403/pixel-office
+claude plugin install pixel-office@pixel-office
 ```
 
 Installed sessions run the installed copy of the mod, not the files in the folder, so an

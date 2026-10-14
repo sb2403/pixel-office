@@ -66,7 +66,7 @@ In a terminal session the pane shows the same feed and org chart as plain text, 
 Install the "Pixel Office" Claude Code mod for me. Use the Claude Code CLI bundled with this desktop app: on Windows it is under `%APPDATA%\Claude\claude-code\<version>\…\claude.exe`, on macOS under `~/Library/Application Support/Claude/claude-code/<version>/` (pick the newest version folder; use `claude` on PATH only if it is 2.1.295 or newer). Run `<that claude> --version` and confirm it is 2.1.295 or newer. Then run `<that claude> plugin marketplace add sb2403/pixel-office` and `<that claude> plugin install pixel-office@pixel-office --config autoOpen=session-start`, show me `<that claude> plugin list`, and tell me to start a new session.
 ```
 
-Approve the commands when Claude asks. If the bundled version is older than 2.1.295, update the Claude desktop app first. Then start a new session and the office opens.
+Approve the commands when Claude asks. The `--config autoOpen=session-start` in that prompt makes the office open at the start of every session; to change that, see Commands and options below. If the bundled version is older than 2.1.295, update the Claude desktop app first. Then start a new session and the office opens.
 
 **Option 2: From a terminal.**
 
@@ -81,16 +81,18 @@ claude plugin install pixel-office@pixel-office
 
 The same two steps also work inside a terminal Claude Code session, as `/plugin marketplace add sb2403/pixel-office` then `/plugin install pixel-office@pixel-office`.
 
-The Claude desktop app's built-in plugin browser won't find this mod, so install from a terminal as above. Once installed, it loads in desktop sessions too.
+The Claude desktop app's built-in plugin browser won't find this mod; use Option 1 or Option 2 above. Once installed, it loads in desktop sessions too.
 
-Answer `y` when it asks, and choose user scope. The install also shows an options screen for `autoOpen` (when the office opens by itself: `on-first-subagent`, `session-start` or `never`; see Options below), so pick one there or keep the default. To skip the screen, set it on the command line, for example `--config autoOpen=session-start` (the exact command is under Options below). Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
+Nothing asks you anything: the install goes ahead at user scope, which is the default, and then prints a note that one option is not set yet. That is fine. `autoOpen`, the option for when the office opens by itself, stays at its default of `on-first-subagent`. To pick another value, add `--config autoOpen=session-start` (or `never`) to the install line, or set it later with `/plugin configure pixel-office@pixel-office` or the `--values-stdin` form under Commands and options below. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
 
 **Fallback.** If those commands do not work, download the repository from GitHub (Code → Download ZIP, then unzip it) or run `git clone https://github.com/sb2403/pixel-office`. Then run these two commands in a terminal, with the path set to the unzipped or cloned folder:
 
 ```
-claude plugin marketplace add <path-to-the-unzipped-folder>
+claude plugin marketplace add "<path-to-the-unzipped-folder>"
 claude plugin install pixel-office@pixel-office
 ```
+
+The quotes are needed if the path has spaces in it, and harmless if it does not.
 
 ## Commands and options
 
