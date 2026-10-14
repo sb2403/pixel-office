@@ -14,7 +14,7 @@ const PANE_PROPS = {
 } as const
 const FLUSH = 1100
 
-function world(on: On) {
+function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   const clock = mock.clock(on, { now: new Date(2026, 9, 14, 12, 0).getTime() })
   mock.store(on)
   const opened: string[] = []
@@ -25,7 +25,10 @@ function world(on: On) {
     return next(e)
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('command.register', ($, e) => {
+    if (options.isCommandBroken === true) throw new Error('command registry is down')
+    return { value: { command: e.name } }
+  })
   on('ui.open', ($, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -60,6 +63,14 @@ test('a Read call shows in the ticker and passes through unchanged', async ($, o
   expect(value?.ticker.map(line => line.text)).toContain('Main is reading auth.ts')
 })
 
+test('the office keeps working when the command cannot be registered', async ($, on) => {
+  const { clock, scene } = world(on, { isCommandBroken: true })
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Read', tool_use_id: 'tu-1', file_path: '/work/src/auth.ts' })
+  await clock.advance(FLUSH)
+  expect(scene()?.ticker.map(line => line.text)).toContain('Main is reading auth.ts')
+})
+
 test('a denied call passes through unchanged', async ($, on) => {
   const { clock, scene } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
@@ -81,6 +92,15 @@ test('a spawned subagent opens the office and appears in the drawing', async ($,
   expect(String(svg?.props.source)).toContain('id="agent-agent-1"')
   expect(await ui.find({ type: 'Text', text: /Main hired Explore: find auth code/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Explore · working · Meeting room/ })).toBeDefined()
+})
+
+test('a spawn returns before the pane opens', async ($, on) => {
+  const { clock, opened } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  expect(opened).toEqual([])
+  await clock.advance(FLUSH)
+  expect(opened).toContain('pixel-office')
 })
 
 test('a subagent works, hands back and leaves', async ($, on) => {

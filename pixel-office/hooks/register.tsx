@@ -22,13 +22,13 @@ const quietly = async (work: () => Promise<void> | void): Promise<void> => {
   }
 }
 
-type Office = { queue: OfficeEvent[]; isFlushing: boolean; flushes: number; isOpened: boolean }
+type Office = { queue: OfficeEvent[]; isFlushing: boolean; flushes: number; isOpened: boolean; wantsOpen: boolean }
 
 // The engine only lets `$` travel into functions declared at the top of this file, so the helpers that
 // take it live here and share the mutable bits through one plain object.
 async function openPane($: EngineInterface, office: Office): Promise<void> {
-  office.isOpened = true
   await $.ui.open({ id: PANE, title: PANE_TITLE })
+  office.isOpened = true
 }
 
 async function flush($: EngineInterface, office: Office): Promise<void> {
@@ -46,12 +46,16 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
       return isSweepTurn && needsSweep(applied, now) ? reduce(applied, { kind: 'tick', at: now }) : applied
     })
   })
+  // The spawn hook only asks for the pane; it opens here, off the spawn path, and a failed open tries again next flush.
+  await quietly(async () => {
+    if (office.wantsOpen && !office.isOpened) await openPane($, office)
+  })
   office.isFlushing = false
 }
 
 export const register: Register = (on, options) => {
   const autoOpen = String(options.autoOpen ?? 'on-first-subagent')
-  const office: Office = { queue: [], isFlushing: false, flushes: 0, isOpened: false }
+  const office: Office = { queue: [], isFlushing: false, flushes: 0, isOpened: false, wantsOpen: false }
 
   const push = (ev: OfficeEvent): void => {
     office.queue.push(ev)
@@ -59,11 +63,16 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
-    await quietly(async () => {
-      await $.command.register({ name: 'office', description: 'Show or hide the pixel office' })
+    // Each step stands alone: one that fails must not keep the others from running.
+    await quietly(() => {
       $.clock.every(FLUSH_MS, () => {
         void flush($, office)
       })
+    })
+    await quietly(async () => {
+      await $.command.register({ name: 'office', description: 'Show or hide the pixel office' })
+    })
+    await quietly(async () => {
       if (autoOpen === 'session-start') await openPane($, office)
     })
     return next(e)
@@ -107,7 +116,7 @@ export const register: Register = (on, options) => {
         isTeammate: e.isTeammate === true,
         at: await $.clock.now(),
       })
-      if (autoOpen === 'on-first-subagent' && !office.isOpened) await openPane($, office)
+      if (autoOpen === 'on-first-subagent' && !office.isOpened) office.wantsOpen = true
     })
     return spawned
   }).catch(($, e, next) => next(e))
