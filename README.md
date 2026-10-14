@@ -56,11 +56,11 @@ or change it later from the plugin's options (`claude plugin configure pixel-off
 Installed sessions run the installed copy of the mod, not the files in this repository, so a change only reaches them once it is published as a new version. After changing the mod, raise `version` in `pixel-office/.claude-plugin/plugin.json`, then:
 
 ```bash
-claude plugin marketplace update pixel-office-local
-claude plugin update pixel-office@pixel-office-local
+claude plugin marketplace update pixel-office
+claude plugin update pixel-office@pixel-office
 ```
 
-and start a new session. (`pixel-office-local` is the name this marketplace registers under, however it was added.)
+and start a new session. (`pixel-office` is the name this marketplace registers under, however it was added.)
 
 ## Good to know
 
