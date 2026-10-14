@@ -1,0 +1,15 @@
+{
+  "name": "pixel-office",
+  "version": "0.1.0",
+  "description": "A live pixel-art office showing what every agent in the session is doing",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "autoOpen": {
+      "type": "string",
+      "title": "Open the office",
+      "description": "When the office pane opens by itself",
+      "default": "on-first-subagent",
+      "options": ["on-first-subagent", "session-start", "never"]
+    }
+  }
+}
