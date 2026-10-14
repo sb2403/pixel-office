@@ -13,9 +13,10 @@ const CLOCK_EVERY = 3
 const QUEUE_MAX = 500
 const UNTRACKED = new Set(['Agent', 'Task'])
 
-// Atoms cannot be imported across files, so each file that reads one declares it again; pane.tsx has the same two.
+// Atoms cannot be imported across files, so each file that reads one declares it again; pane.tsx has the same three.
 const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
+const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
 
 const quietly = async (work: () => Promise<void> | void): Promise<void> => {
   try {
@@ -50,9 +51,12 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     })
   })
   // The "On the job" clock of a selected agent is the one thing that changes with no event behind it:
-  // about once a second, ask for a redraw while a row is open.
+  // about once a second, while a row is open, write the time to state. The pane reads that atom, and a state
+  // write is what makes the desktop pane redraw (a bare redraw request from this timer does not).
   await quietly(async () => {
-    if (office.flushes % CLOCK_EVERY === 0 && (await read($, selectedAtom)) !== null) $.ui.invalidate('ui.render')
+    if (office.flushes % CLOCK_EVERY !== 0 || (await read($, selectedAtom)) === null) return
+    const now = await $.clock.now()
+    await update($, clockAtom, () => now)
   })
   // The session and spawn hooks only ask for the pane; it opens here, off their path, and a failed open tries again next flush.
   await quietly(async () => {

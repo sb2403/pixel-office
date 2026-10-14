@@ -74,6 +74,6 @@ export type OfficeEvent =
 
 declare module 'claude-code' {
   interface PluginState {
-    'pixel-office': { scene: Scene; legendOpen: boolean; selected: string | null }
+    'pixel-office': { scene: Scene; legendOpen: boolean; selected: string | null; clock: number }
   }
 }
