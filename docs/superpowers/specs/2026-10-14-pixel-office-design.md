@@ -115,10 +115,12 @@ sees engine shapes:
 - `spawned { id, parentId?, type, description, name?, isTeammate, at }`
 - `toolStarted { agentId, tool, target, callId, at }` (agentId `main` for the main loop)
 - `toolEnded { agentId, callId, isError, at }`
-- `waiting { agentId, reason, at }`: from `classic.PermissionRequest`, or a
-  `toolStarted` for AskUserQuestion or ExitPlanMode. Waiting ends with that call's
-  `toolEnded`.
-- `messaged { from, to, at }` (SendMessage)
+- `waiting { agentId, tool, at }` (`agentId` is null when the permission prompt does not
+  say whose it is): from `classic.PermissionRequest`, or a `toolStarted` for
+  AskUserQuestion or ExitPlanMode. Waiting ends with that call's `toolEnded`.
+- There is no separate message event: SendMessage is a `toolStarted` like any other, and
+  the reducer special-cases it (the sender walks beside the recipient and back).
+- `todos { done, open, at }` (counts from TodoWrite and the Task tools, for the task board)
 - `turnStarted { isContinuation, at }` (Main's `turn.start`; `isContinuation` is true when
   the turn began with no typed text, so it carries on from the one before)
 - `turnEnded { at }` (Main's `turn.complete`, the one without an `agentId`)
@@ -198,7 +200,8 @@ Any tool not mapped goes to the agent's desk.
 2. `toolStarted`: walks to the station for the tool; plays that station's loop.
 3. `toolEnded` with `isError`: a red puff over the head.
 4. `waiting`: walks to reception; the bell rings.
-5. `messaged`: walks to the recipient's position, then back.
+5. `toolStarted` for SendMessage: walks to the recipient's position, then back (to the
+   meeting room instead when no live agent has that name).
 6. `handedBack`: carries a folder to the parent's desk, then walks to the elevator and
    leaves. Both walks are drawn in one SVG as two `animateMotion` elements, the second
    beginning when the first ends. The agent becomes `gone`; the next `tick` at least

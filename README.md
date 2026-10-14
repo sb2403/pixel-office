@@ -50,7 +50,7 @@ The same two steps also work inside a terminal Claude Code session, as `/plugin 
 
 The Claude desktop app's built-in plugin browser won't find this mod, so install from a terminal as above. Once installed, it loads in desktop sessions too.
 
-Answer `y` when it asks, and choose user scope. The install also shows an options screen for `autoOpen` (when the office opens by itself: `on-first-subagent`, `session-start` or `never`; see Options below), so pick one there or keep the default. To skip the screen, set it on the command line with `--config autoOpen=…`. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
+Answer `y` when it asks, and choose user scope. The install also shows an options screen for `autoOpen` (when the office opens by itself: `on-first-subagent`, `session-start` or `never`; see Options below), so pick one there or keep the default. To skip the screen, set it on the command line, for example `--config autoOpen=session-start` (the exact command is under Options below). Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
 
 **Fallback.** If those commands do not work, download the repository from GitHub (Code → Download ZIP, then unzip it) or run `git clone https://github.com/sb2403/pixel-office`. Then run these two commands in a terminal, with the path set to the unzipped or cloned folder:
 
@@ -78,6 +78,8 @@ To change it later, run `/plugin configure pixel-office@pixel-office` inside Cla
 ```bash
 echo '{"autoOpen":"never"}' | claude plugin configure pixel-office@pixel-office --values-stdin
 ```
+
+That one-liner is for PowerShell and for macOS/Linux shells. In Command Prompt (cmd.exe) the single quotes would be passed through as part of the text, so use `/plugin configure` there, or run it from PowerShell.
 
 Either way the new value applies to sessions you start afterwards. `claude plugin configure pixel-office@pixel-office` on its own only shows the options and whether each is set; it changes nothing.
 
