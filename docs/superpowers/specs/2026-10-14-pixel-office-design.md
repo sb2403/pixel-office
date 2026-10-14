@@ -77,6 +77,14 @@ desktop pane. If the reload is visibly bad, the mitigation is to raise the coale
 interval and make walks start from the agent's previous position (already the plan), so
 a restart is invisible except for loop phase.
 
+### Spike outcome (2026-10-14)
+
+Observed in the desktop pane: an `isInteractive` SVG whose source changes flickers badly on every
+redraw, an image-mode SVG (no `isInteractive`) with a changing source does not, SMIL animates in both,
+and hover tooltips never appear on this surface. So the office is drawn in image mode, and the hover
+details below become click-for-details: org chart rows are buttons, and pressing one shows that agent's
+details under the chart.
+
 ## Architecture
 
 Mod folder: `D:\Claude\Pixel Office\pixel-office\`. Each unit has one job and the pure
@@ -252,11 +260,26 @@ The mod must never change or block what Claude does.
 
 ```
 claude plugin marketplace add "D:\Claude\Pixel Office"
-claude plugin install pixel-office@pixel-office-local --scope user
+claude plugin install pixel-office@pixel-office --scope user
 ```
 
-A folder marketplace is read from the folder itself, so later edits reach sessions with
-`/reload-plugins` (terminal) or a new session (desktop).
+Others install it from the public repository, from a terminal Claude Code session:
+
+```
+/plugin install pixel-office --marketplace sb2403/pixel-office
+```
+
+Installed sessions run the installed copy of the mod, not the files in the folder, so an
+edit reaches them only as a new version. After changing the mod, raise `version` in
+`pixel-office/.claude-plugin/plugin.json`, then:
+
+```
+claude plugin marketplace update pixel-office
+claude plugin update pixel-office@pixel-office
+```
+
+and start a new session. Claude Code 2.1.295 or newer is needed to run the mod at all;
+older versions report that it failed to load.
 
 ## Build order
 

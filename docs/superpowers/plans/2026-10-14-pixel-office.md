@@ -2091,7 +2091,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: from `./model`: `MAIN`, `isWalkingAt`, `positionAt`; from `./office`: `OFFICE_DEFS`, `officeBase`, `officeDecor`, `rect`; from `./sprites`: `iconSvg`, `personSvg`, `type Variant`; from `./stations`: `HEIGHT`, `STATIONS`, `WIDTH`, `clamp`, `clip`, `splitAt`.
-- Produces: `SVG_BUDGET = 120000`, `PUFF_MS = 2500`, `escapeXml(text): string`, `isNight(now): boolean`, `renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string`, `type OrgRow = { id: string; depth: number; label: string; status: 'working' | 'waiting' | 'idle' | 'done'; place: string }`, `statusOf(agent): OrgRow['status']`, `orgRows(scene): OrgRow[]`, `clockLabel(at): string` (`HH:MM`, local time), `altText(scene): string`.
+- Produces: `SVG_BUDGET = 120000`, `PUFF_MS = 2500`, `escapeXml(text): string`, `isNight(now): boolean`, `renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string`, `type OrgRow = { id: string; depth: number; label: string; status: 'working' | 'waiting' | 'idle' | 'done'; place: string }`, `statusOf(agent): OrgRow['status']`, `orgRows(scene): OrgRow[]`, `clockLabel(at): string` (`HH:MM`, local time), `altText(scene): string`, `agentDetails(scene: Scene, id: string, now: number): string[]` (who, task, doing or status, reports to, time on the job; `[]` for an unknown id; also used as each agent's SVG `<title>`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2100,7 +2100,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 import { describe, expect, test } from 'claude-code/testing'
 
 import { MAIN, emptyScene, reduce } from '../hooks/model'
-import { PUFF_MS, SVG_BUDGET, altText, clockLabel, escapeXml, isNight, orgRows, renderOffice } from '../hooks/render'
+import { PUFF_MS, SVG_BUDGET, agentDetails, altText, clockLabel, escapeXml, isNight, orgRows, renderOffice } from '../hooks/render'
 import type { OfficeEvent, Scene } from '../types'
 
 const spawnEv = (id: string, at: number): OfficeEvent => ({
@@ -2223,6 +2223,19 @@ describe('labels', () => {
   test('escapeXml escapes the five XML characters', async () => {
     expect(escapeXml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt;')
   })
+
+  test('agent details say who, what, for whom and for how long', async () => {
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    expect(agentDetails(s, 'a1', 66_000)).toEqual([
+      'Explore (Explore)',
+      'Task: find auth code',
+      'Doing: Read auth.ts',
+      'Reports to: Main',
+      'On the job: 1m 5s',
+    ])
+    expect(agentDetails(s, MAIN, 66_000)[0]).toBe('Main (your main agent)')
+    expect(agentDetails(s, 'nobody', 66_000)).toEqual([])
+  })
 })
 ```
 
@@ -2331,7 +2344,9 @@ export function altText(scene: Scene): string {
   return `Pixel office with ${here.length} ${noun}: ${here.map(a => `${a.label} at ${STATIONS[a.station].name}`).join(', ')}`
 }
 
-function tooltip(agent: Agent, scene: Scene, now: number): string {
+export function agentDetails(scene: Scene, id: string, now: number): string[] {
+  const agent = scene.agents[id]
+  if (agent === undefined) return []
   const boss = agent.parentId === null ? undefined : scene.agents[agent.parentId]?.label
   const lines = [agent.id === MAIN ? 'Main (your main agent)' : `${agent.label} (${agent.type})`]
   if (agent.description !== '') lines.push(`Task: ${agent.description}`)
@@ -2345,7 +2360,7 @@ function tooltip(agent: Agent, scene: Scene, now: number): string {
     const secs = Math.max(0, Math.round((now - agent.arrivedAt) / 1000))
     lines.push(`On the job: ${Math.floor(secs / 60)}m ${secs % 60}s`)
   }
-  return lines.join('\n')
+  return lines
 }
 
 function bubble(agent: Agent): string {
@@ -2381,7 +2396,7 @@ function leaveAt(agent: Agent, now: number): string {
 
 function drawAgent(agent: Agent, scene: Scene, now: number): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
-  const head = `<title>${escapeXml(tooltip(agent, scene, now))}</title>${leaveAt(agent, now)}`
+  const head = `<title>${escapeXml(agentDetails(scene, agent.id, now).join('\n'))}</title>${leaveAt(agent, now)}`
   const tag =
     '<text x="0" y="-14" font-size="3.5" text-anchor="middle" fill="#ffffff" stroke="#2c2c2a" ' +
     `stroke-width="0.8" paint-order="stroke">${escapeXml(agent.label)}</text>`
@@ -2504,13 +2519,17 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `pixel-office/hooks/state.ts`
 - Create: `pixel-office/hooks/pane.tsx`
 - Modify: `pixel-office/hooks/register.tsx` (replace the stub entirely)
+- Modify: `pixel-office/types/index.d.ts` (add the `selected` state key)
 - Test: `pixel-office/tests/plugin.test.ts`
 
+**Spike outcome (Task 1) that shapes this task:** the office `Svg` is drawn in image mode (no `isInteractive`): interactive mode flickered on every redraw, image mode did not, and hover tooltips never appeared on this surface. Hover details are replaced by click-for-details: each org chart row is a `Button`; pressing it shows that agent's `agentDetails` lines under the chart, pressing again hides them. `FLUSH_MS` stays 350.
+
 **Interfaces:**
-- Consumes: `emptyScene`, `MAIN`, `needsSweep`, `reduce` from `./model`; `altText`, `clockLabel`, `orgRows`, `renderOffice` from `./render`; `STATIONS`, `STATION_ORDER`, `stationFor`, `targetOf`, `todoCounts` from `./stations`.
-- Produces (`state.ts`): `PANE = 'pixel-office'`, `PANE_TITLE = 'Office'`, `sceneAtom`, `legendAtom`.
+- Consumes: `emptyScene`, `MAIN`, `needsSweep`, `reduce` from `./model`; `agentDetails`, `altText`, `clockLabel`, `orgRows`, `renderOffice` from `./render`; `STATIONS`, `STATION_ORDER`, `stationFor`, `targetOf`, `todoCounts` from `./stations`.
+- Produces (`types/index.d.ts`): `PluginState['pixel-office'] = { scene: Scene; legendOpen: boolean; selected: string | null }`.
+- Produces (`state.ts`): `PANE = 'pixel-office'`, `PANE_TITLE = 'Office'`, `sceneAtom`, `legendAtom`, `selectedAtom`.
 - Produces (`pane.tsx`): `registerPane(on: On): void`.
-- Produces (`register.tsx`): `FLUSH_MS` (350, or 1000 if Task 1 found flicker), `register: Register`.
+- Produces (`register.tsx`): `FLUSH_MS = 350`, `register: Register`.
 
 - [ ] **Step 1: Write the failing integration tests**
 
@@ -2635,6 +2654,27 @@ test('the legend opens and closes', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /Records library: Read/ })).toBeDefined()
 })
 
+test('pressing an agent in the org chart shows and hides its details', async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeUndefined()
+  await ui.press({ key: 'agent-agent-1' })
+  expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Reports to: Main$/ })).toBeDefined()
+  await ui.press({ key: 'agent-agent-1' })
+  expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeUndefined()
+})
+
+test('the office is drawn as an image, not an interactive frame', async ($, on) => {
+  world(on)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  const svg = await ui.find({ type: 'Svg' })
+  expect(svg?.props.isInteractive).toBeUndefined()
+})
+
 test('the terminal gets a text office', async ($, on) => {
   world(on)
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
@@ -2643,14 +2683,23 @@ test('the terminal gets a text office', async ($, on) => {
 })
 ```
 
-Note: `FLUSH = 1100` advances past one flush even if Task 1 set `FLUSH_MS = 1000`. If the kit refuses `agentId` inside `$.tool.call`'s input, drop that test's Grep call and instead assert the hand-back lines only; record the limitation in the commit message.
+Note: `FLUSH = 1100` advances past several 350 ms flushes. If the kit refuses `agentId` inside `$.tool.call`'s input, drop that test's Grep call and instead assert the hand-back lines only; record the limitation in the commit message.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `CC="/c/Users/bar12/AppData/Roaming/Claude/claude-code/2.1.295/d2e29494ec83/claude.exe"; "$CC" plugin test pixel-office`
 Expected: FAIL in `plugin.test.ts` (the stub registers no hooks: no ticker lines, no pane drawing, no `office` command).
 
-- [ ] **Step 3: Implement state.ts**
+- [ ] **Step 3: Add the selected key to the contract and implement state.ts**
+
+In `pixel-office/types/index.d.ts`, change the `PluginState` block to:
+```ts
+declare module 'claude-code' {
+  interface PluginState {
+    'pixel-office': { scene: Scene; legendOpen: boolean; selected: string | null }
+  }
+}
+```
 
 `pixel-office/hooks/state.ts`:
 ```ts
@@ -2663,6 +2712,7 @@ export const PANE_TITLE = 'Office'
 
 export const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
 export const legendAtom = atom({ plugin: 'pixel-office', key: 'legendOpen' } as const, false)
+export const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 ```
 
 - [ ] **Step 4: Implement pane.tsx**
@@ -2672,8 +2722,8 @@ export const legendAtom = atom({ plugin: 'pixel-office', key: 'legendOpen' } as 
 import { read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
-import { altText, clockLabel, orgRows, renderOffice } from './render'
-import { PANE, legendAtom, sceneAtom } from './state'
+import { agentDetails, altText, clockLabel, orgRows, renderOffice } from './render'
+import { PANE, legendAtom, sceneAtom, selectedAtom } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
 const ORG_MAX = 14
@@ -2683,10 +2733,12 @@ export function registerPane(on: On): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = await read($, sceneAtom)
     const isLegendOpen = await read($, legendAtom)
+    const selected = await read($, selectedAtom)
     const now = await $.clock.now()
     const rows = orgRows(scene)
     const shown = rows.slice(0, ORG_MAX)
     const hidden = rows.length - shown.length
+    const details = selected === null ? [] : agentDetails(scene, selected, now)
 
     if (e.surface === 'terminal') {
       const { Box, Text } = $.ui.resolve(e)
@@ -2712,7 +2764,7 @@ export function registerPane(on: On): void {
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
     return (
       <Box flexDirection="column" gap={1}>
-        <Svg source={renderOffice(scene, now)} alt={altText(scene)} isInteractive={true} />
+        <Svg source={renderOffice(scene, now)} alt={altText(scene)} />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>
@@ -2726,12 +2778,25 @@ export function registerPane(on: On): void {
           <Box key="org" flexDirection="column" width={orgWidth}>
             <Text bold>Who reports to whom</Text>
             {shown.map(row => (
-              <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'done'} wrap="truncate-end">
-                {'  '.repeat(row.depth)}
-                {row.label} · {row.status} · {row.place}
-              </Text>
+              <Button
+                key={`agent-${row.id}`}
+                plain
+                onPress={() => update($, selectedAtom, current => (current === row.id ? null : row.id))}
+              >
+                <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'done'}>
+                  {'  '.repeat(row.depth)}
+                  {row.label} · {row.status} · {row.place}
+                </Text>
+              </Button>
             ))}
             {hidden > 0 && <Text dimColor>+{hidden} more</Text>}
+            {details.length > 0 && (
+              <Box key="details" flexDirection="column" marginTop={1}>
+                {details.map(line => (
+                  <Text dimColor>{line}</Text>
+                ))}
+              </Box>
+            )}
           </Box>
         </Box>
         <Button
@@ -2903,7 +2968,7 @@ export const register: Register = (on, options) => {
 }
 ```
 
-If Task 1 found visible flicker, change `FLUSH_MS` to `1000` and `SWEEP_EVERY` to `5`.
+`FLUSH_MS` stays 350 (Task 1: the flicker came from interactive mode, not from the redraw rate).
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -2913,12 +2978,12 @@ Expected: PASS, all test files.
 - [ ] **Step 7: Validate the mod**
 
 Run: `CC="/c/Users/bar12/AppData/Roaming/Claude/claude-code/2.1.295/d2e29494ec83/claude.exe"; "$CC" plugin validate --strict pixel-office`
-Expected: valid; hooks listed: `session.start`, `tool.call`, `agent.spawn`, `turn.start`, `turn.complete`, `classic.PermissionRequest`, `command.run`, `ui.render`; state keys `pixel-office/scene` and `pixel-office/legendOpen`; `command.run` reported as answering its own command. Gating hooks listed "with .catch" are expected.
+Expected: valid; hooks listed: `session.start`, `tool.call`, `agent.spawn`, `turn.start`, `turn.complete`, `classic.PermissionRequest`, `command.run`, `ui.render`; state keys `pixel-office/scene`, `pixel-office/legendOpen` and `pixel-office/selected`; `command.run` reported as answering its own command. Gating hooks listed "with .catch" are expected.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add pixel-office/hooks/state.ts pixel-office/hooks/pane.tsx pixel-office/hooks/register.tsx pixel-office/tests/plugin.test.ts
+git add pixel-office/hooks/state.ts pixel-office/hooks/pane.tsx pixel-office/hooks/register.tsx pixel-office/tests/plugin.test.ts pixel-office/types/index.d.ts
 git commit -m "feat: wire hooks, pane and office command
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -3001,7 +3066,7 @@ A Claude Code mod that draws a live pixel-art office in the Claude desktop app. 
 | Elevator | Agents arrive and leave |
 | Break room | Idle agents |
 
-Below the office: a plain-English feed of what just happened, an org chart of who reports to whom, and a legend. Hover a character for its task, current tool and time on the job.
+Below the office: a plain-English feed of what just happened, an org chart of who reports to whom, and a legend. Click a name in the org chart to see its task, current tool, who it reports to and time on the job.
 
 ## Install
 
@@ -3058,7 +3123,7 @@ Checklist to confirm with the person:
 4. Each subagent walks to Main's desk and then back to the elevator and disappears.
 5. The feed shows lines such as "Main hired Explore: …", "Explore is reading …", "Explore handed its report to Main and left".
 6. The org chart shows both under Main, ending as "done · left".
-7. Hovering a character shows its tooltip.
+7. Clicking a name in the org chart shows that agent's task, current tool, boss and time on the job; clicking again hides it.
 8. A prompt that makes Claude run a command needing permission sends Main to reception with a blinking bubble until the prompt is answered.
 9. `/office` closes and reopens the pane.
 
