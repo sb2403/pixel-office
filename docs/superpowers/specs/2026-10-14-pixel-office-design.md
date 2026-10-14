@@ -263,8 +263,23 @@ claude plugin marketplace add "D:\Claude\Pixel Office"
 claude plugin install pixel-office@pixel-office-local --scope user
 ```
 
-A folder marketplace is read from the folder itself, so later edits reach sessions with
-`/reload-plugins` (terminal) or a new session (desktop).
+Others install it from the public repository, from a terminal Claude Code session:
+
+```
+/plugin install pixel-office --marketplace sb2403/pixel-office
+```
+
+Installed sessions run the installed copy of the mod, not the files in the folder, so an
+edit reaches them only as a new version. After changing the mod, raise `version` in
+`pixel-office/.claude-plugin/plugin.json`, then:
+
+```
+claude plugin marketplace update pixel-office-local
+claude plugin update pixel-office@pixel-office-local
+```
+
+and start a new session. Claude Code 2.1.295 or newer is needed to run the mod at all;
+older versions report that it failed to load.
 
 ## Build order
 

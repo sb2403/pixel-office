@@ -16,30 +16,69 @@ A Claude Code mod that draws a live pixel-art office in the Claude desktop app. 
 | Task board | TodoWrite, Task tools, plan updates |
 | Reception | Waiting on you: questions, permissions, plan approval |
 | Elevator | Agents arrive and leave |
-| Break room | Idle agents |
+| Break room | Idle agents, and Main between turns after a while |
 
-Below the office: a plain-English feed of what just happened, an org chart of who reports to whom, and a legend. Click a name in the org chart to see its task, current tool, who it reports to and time on the job.
+Below the office: a plain-English feed of what just happened, an org chart of who reports to whom (each helper's job sits under its name), and a legend. Click a name in the org chart to see its task, current tool, who it reports to and time on the job.
+
+## Requirements
+
+- Claude Code 2.1.295 or newer. Older versions report that the mod failed to load.
+- The Claude desktop app for the pixel picture. In a terminal you get a text version of the same office.
 
 ## Install
 
-From a terminal, once:
+From a terminal Claude Code session:
 
-```bash
-claude plugin marketplace add "D:\Claude\Pixel Office"
-claude plugin install pixel-office@pixel-office-local
+```
+/plugin install pixel-office --marketplace sb2403/pixel-office
 ```
 
-Then start a new session. The office opens the first time a subagent is hired, or any time with `/office`.
+Answer `y` when it asks, and choose user scope. After that the mod loads in desktop sessions too. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
 
 ## Options
 
-`autoOpen`: `on-first-subagent` (default), `session-start`, or `never`. Change it in `/config`.
+`autoOpen` decides when the office opens by itself:
+
+- `on-first-subagent` (default): the first time a subagent is hired.
+- `session-start`: as soon as a session starts.
+- `never`: only when you run `/office`.
+
+Set it while installing:
+
+```bash
+claude plugin install pixel-office --marketplace sb2403/pixel-office --config autoOpen=session-start
+```
+
+or change it later from the plugin's options (`claude plugin configure pixel-office` lists them).
+
+## Updating
+
+Installed sessions run the installed copy of the mod, not the files in this repository, so a change only reaches them once it is published as a new version. After changing the mod, raise `version` in `pixel-office/.claude-plugin/plugin.json`, then:
+
+```bash
+claude plugin marketplace update pixel-office-local
+claude plugin update pixel-office@pixel-office-local
+```
+
+and start a new session. (`pixel-office-local` is the name this marketplace registers under, however it was added.)
+
+## Good to know
+
+- It is built on an early-access mod API that may change between Claude Code releases, so a new release can need a new version of this mod.
+- An organization policy can disable mods. If yours does, the office will not load.
+- Cost: it uses no model tokens. The only thing that enters your conversation is the one-line reply to `/office`.
+- Privacy: it reads tool names, file names and commands inside your own Claude Code in order to draw them. It sends nothing anywhere.
 
 ## Develop
 
+From the repository root:
+
 ```bash
 claude plugin test pixel-office
+claude plugin validate .
 claude plugin validate --strict pixel-office
 ```
 
-Use Claude Code 2.1.295 or newer for `plugin test`. Because the marketplace is this folder, edits reach new sessions without reinstalling; run `/reload-plugins` in a terminal session to pick them up there.
+`plugin test` needs Claude Code 2.1.295 or newer. `validate .` checks the marketplace file. `validate --strict` checks the mod and treats warnings as errors; it passes on this tree.
+
+Licensed under the MIT License.
