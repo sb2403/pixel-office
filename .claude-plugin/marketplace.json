@@ -1,0 +1,5 @@
+{
+  "name": "pixel-office-local",
+  "owner": { "name": "local" },
+  "plugins": [{ "name": "pixel-office", "source": "./pixel-office" }]
+}
