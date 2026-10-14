@@ -10,6 +10,7 @@ const ORG_MAX = 14
 const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
 const legendAtom = atom({ plugin: 'pixel-office', key: 'legendOpen' } as const, false)
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
+const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
 const STATUS_COLOR = { working: 'green', waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
 export function registerPane(on: On): void {
@@ -17,7 +18,8 @@ export function registerPane(on: On): void {
     const scene = await read($, sceneAtom)
     const isLegendOpen = await read($, legendAtom)
     const selected = await read($, selectedAtom)
-    const now = await $.clock.now()
+    // Reading the clock atom subscribes the pane to it: each write from the flush timer redraws the pane.
+    const now = Math.max(await $.clock.now(), await read($, clockAtom))
     const rows = orgRows(scene)
     const shown = rows.slice(0, ORG_MAX)
     const hidden = rows.length - shown.length

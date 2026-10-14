@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Scene } from '../types'
 
 const SCENE = { plugin: 'pixel-office', key: 'scene' } as const
+const CLOCK = { plugin: 'pixel-office', key: 'clock' } as const
 const PANE_PROPS = {
   title: 'Office',
   isFocused: false,
@@ -19,9 +20,15 @@ function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   mock.store(on)
   const opened: string[] = []
   let latest: Scene | undefined
+  const clockWrites: number[] = []
   // The test's `$` has no `state` noun, so the scene is read from what the plugin writes.
   on('state.set', SCENE, ($, e, next) => {
     latest = e.value
+    return next(e)
+  })
+  // The job clock is the same: the writes are all there is to see of it.
+  on('state.set', CLOCK, ($, e, next) => {
+    clockWrites.push(e.value)
     return next(e)
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -40,7 +47,7 @@ function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
-  return { clock, opened, scene: () => latest }
+  return { clock, opened, scene: () => latest, clockWrites }
 }
 
 const ticker = (scene: Scene | undefined): string[] => scene?.ticker.map(line => line.text) ?? []
@@ -262,6 +269,30 @@ test('the time on the job of a selected agent keeps counting', async ($, on) => 
   const after = await ui.find({ type: 'Text', text: /^On the job:/ })
   expect(after).toBeDefined()
   expect(after?.text).not.toBe(before?.text)
+})
+
+test('with nothing selected the job clock is never written', async ($, on) => {
+  const { clock, clockWrites } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(5000)
+  expect(clockWrites).toEqual([])
+})
+
+test('the job clock is written through state while an agent is selected, and stops when it is not', async ($, on) => {
+  const { clock, clockWrites } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-agent-1' })
+  const beforeSelected = clockWrites.length
+  await clock.advance(3000)
+  expect(clockWrites.length - beforeSelected).toBeGreaterThanOrEqual(2)
+  await ui.press({ key: 'agent-agent-1' })
+  const afterDeselected = clockWrites.length
+  await clock.advance(3000)
+  expect(clockWrites.length).toBe(afterDeselected)
 })
 
 test('every helper shows its objective under its name, on both surfaces', async ($, on) => {
