@@ -1,8 +1,11 @@
 {
   "name": "pixel-office",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A live pixel-art office showing what every agent in the session is doing",
   "author": { "name": "Spencer Barrett" },
+  "license": "MIT",
+  "repository": "https://github.com/sb2403/pixel-office",
+  "homepage": "https://github.com/sb2403/pixel-office",
   "types": "./types/index.d.ts",
   "userConfig": {
     "autoOpen": {
