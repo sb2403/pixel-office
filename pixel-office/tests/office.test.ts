@@ -28,3 +28,10 @@ test('the static office stays well under the SVG budget', async () => {
 test('rect rounds coordinates to two decimals', async () => {
   expect(rect(1.234, 2, 3, 4, '#fff')).toBe('<rect x="1.23" y="2" width="3" height="4" fill="#fff"/>')
 })
+
+test('the desk partition leaves the three aisles open', async () => {
+  const base = officeBase(false)
+  expect(base).toContain('<rect x="76" y="47" width="18" height="2"')
+  expect(base).toContain('<rect x="144" y="47" width="18" height="2"')
+  expect(base).not.toContain('<rect x="76" y="47" width="86" height="2"')
+})

@@ -108,7 +108,7 @@ function walls(isNight: boolean): string {
   out += `<g id="po-zone-taskboard">${rect(72, 1, 32, 8, C.frame)}${rect(73, 2, 30, 6, C.cork)}</g>`
   out += rect(62, 10, 2, 48, C.glass, GLASS) + rect(0, 58, 48, 2, C.glass, GLASS) + rect(48, 58, 1, 2, C.frame)
   out += rect(176, 98, 2, 52, C.glass, GLASS) + rect(190, 96, 50, 2, C.glass, GLASS) + rect(189, 96, 1, 2, C.frame)
-  out += rect(0, 106, 28, 2, C.partition) + rect(37, 106, 25, 2, C.partition) + rect(76, 47, 86, 2, C.partition)
+  out += rect(0, 106, 28, 2, C.partition) + rect(37, 106, 25, 2, C.partition) + rect(76, 47, 18, 2, C.partition) + rect(100, 47, 16, 2, C.partition) + rect(122, 47, 16, 2, C.partition) + rect(144, 47, 18, 2, C.partition)
   return out
 }
 
