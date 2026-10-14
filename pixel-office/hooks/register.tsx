@@ -53,8 +53,13 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
   // The "On the job" clock of a selected agent is the one thing that changes with no event behind it:
   // about once a second, while a row is open, write the time to state. The pane reads that atom, and a state
   // write is what makes the desktop pane redraw (a bare redraw request from this timer does not).
+  // Only a helper still on the job has a clock to keep: not Main, not one that has left, not a pruned id.
   await quietly(async () => {
-    if (office.flushes % CLOCK_EVERY !== 0 || (await read($, selectedAtom)) === null) return
+    if (office.flushes % CLOCK_EVERY !== 0) return
+    const selected = await read($, selectedAtom)
+    if (selected === null || selected === MAIN) return
+    const agent = (await read($, sceneAtom)).agents[selected]
+    if (agent === undefined || agent.phase === 'gone') return
     const now = await $.clock.now()
     await update($, clockAtom, () => now)
   })
@@ -86,6 +91,23 @@ export const register: Register = (on, options) => {
     })
     // The session start hook only asks for the pane, as the spawn hook does; the flush opens it.
     if (autoOpen === 'session-start') office.wantsOpen = true
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('session.end', async ($, e, next) => {
+    // A /clear ends the conversation but not the process, and no session.start follows it: the office starts
+    // over, and the flush timer keeps running. Events still queued belong to the old conversation.
+    if (e.reason === 'clear') {
+      await quietly(() => {
+        office.queue = []
+      })
+      await quietly(async () => {
+        await update($, sceneAtom, () => emptyScene())
+      })
+      await quietly(async () => {
+        await update($, selectedAtom, () => null)
+      })
+    }
     return next(e)
   }).catch(($, e, next) => next(e))
 

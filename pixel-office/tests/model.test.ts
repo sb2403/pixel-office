@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { GONE_KEEP, IDLE_MS, LINGER_MS, MAIN, emptyScene, needsSweep, positionAt, reduce } from '../hooks/model'
+import { BRIEFING_MAX_MS, GONE_KEEP, IDLE_MS, LINGER_MS, MAIN, emptyScene, needsSweep, positionAt, reduce } from '../hooks/model'
 import { slotPoint } from '../hooks/stations'
 import type { OfficeEvent, Scene } from '../types'
 
@@ -256,6 +256,49 @@ describe('sweeps', () => {
     const coffee = reduce(home, { kind: 'tick', at: 3500 + IDLE_MS })
     expect(coffee.agents.a1!.station).toBe('breakroom')
     expect(coffee.agents.a1!.phase).toBe('idle')
+  })
+
+  test('a briefing that never gets a first tool ends after a minute at the agent\'s desk', async () => {
+    const hired = run([spawn('a1', 1000)])
+    // Main has gone home long before the minute is up, so only the briefing is left to sweep.
+    const settled = reduce(hired, { kind: 'tick', at: 1000 + LINGER_MS })
+    expect(settled.agents.a1!.phase).toBe('briefing')
+    expect(needsSweep(settled, 1000 + BRIEFING_MAX_MS - 1)).toBe(false)
+    expect(needsSweep(settled, 1000 + BRIEFING_MAX_MS)).toBe(true)
+
+    const early = reduce(settled, { kind: 'tick', at: 1000 + BRIEFING_MAX_MS - 1 })
+    expect(early).toBe(settled)
+    expect(early.agents.a1!.phase).toBe('briefing')
+    expect(early.agents.a1!.station).toBe('meeting')
+    expect(early.briefing).toBe('find auth code')
+
+    const late = reduce(settled, { kind: 'tick', at: 1000 + BRIEFING_MAX_MS })
+    const a1 = late.agents.a1!
+    expect(a1.phase).toBe('working')
+    expect(a1.station).toBe('desk')
+    expect(a1.pos).toEqual(slotPoint('desk', a1.desk))
+    expect(a1.walk?.startedAt).toBe(1000 + BRIEFING_MAX_MS)
+    expect(late.briefing).toBeNull()
+    expect(needsSweep(late, 1000 + BRIEFING_MAX_MS)).toBe(false)
+  })
+
+  test('an agent that is still briefed keeps the whiteboard, and its waiting parent walks home', async () => {
+    const s = run([spawn('a1', 1000, { description: 'find auth code' }), spawn('a2', 57_000, { description: 'review the tests' })])
+    expect(s.agents[MAIN]!.station).toBe('meeting')
+    const swept = reduce(s, { kind: 'tick', at: 1000 + BRIEFING_MAX_MS })
+    expect(swept.agents.a1!.phase).toBe('working')
+    expect(swept.agents.a1!.station).toBe('desk')
+    expect(swept.agents.a2!.phase).toBe('briefing')
+    expect(swept.briefing).toBe('review the tests')
+    expect(swept.agents[MAIN]!.station).toBe('office')
+    expect(swept.agents[MAIN]!.lastEventAt).toBe(1000 + BRIEFING_MAX_MS)
+  })
+
+  test('a first tool inside the minute still ends the briefing as before', async () => {
+    const s = run([spawn('a1', 1000), start('a1', 'Read', 'auth.ts', 'c1', 30_000)])
+    expect(s.agents.a1!.phase).toBe('working')
+    expect(s.agents.a1!.station).toBe('library')
+    expect(reduce(s, { kind: 'tick', at: 1000 + BRIEFING_MAX_MS }).agents.a1!.station).toBe('library')
   })
 
   test('a tick with nothing to do returns the same scene', async () => {

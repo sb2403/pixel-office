@@ -6,6 +6,7 @@ import {
   STATIONS,
   STATION_ORDER,
   WIDTH,
+  clip,
   doorOf,
   pathLength,
   pointAlong,
@@ -61,6 +62,29 @@ describe('targetOf', () => {
   test('drops control characters from what it shows', async () => {
     expect(targetOf('Bash', { command: 'echo \x1b[31mred\x1b[0m\x07' })).toBe('echo [31mred[0m')
     expect(targetOf('Read', { file_path: '/work/\x00odd\x7f.ts' })).toBe('odd.ts')
+  })
+})
+
+describe('clip', () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+  test('cuts by whole characters, never through a surrogate pair', async () => {
+    const out = clip('😀'.repeat(30), 24)
+    expect(out).toBe(`${'😀'.repeat(23)}…`)
+    expect(Array.from(out)).toHaveLength(24)
+    expect(LONE_SURROGATE.test(out)).toBe(false)
+  })
+
+  test('counts a whole emoji as one character against the limit', async () => {
+    expect(clip('😀'.repeat(24), 24)).toBe('😀'.repeat(24))
+    expect(clip('ab😀cd', 5)).toBe('ab😀cd')
+    expect(clip('ab😀cde', 5)).toBe('ab😀c…')
+  })
+
+  test('drops lone surrogates and the two non-characters', async () => {
+    expect(clip('a\uD800b\uDC00c￾d￿e')).toBe('abcde')
+    expect(clip('hi \uD83D')).toBe('hi')
+    expect(clip('a😀b')).toBe('a😀b')
   })
 })
 

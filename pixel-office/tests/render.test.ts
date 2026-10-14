@@ -164,6 +164,14 @@ describe('labels', () => {
     expect(escapeXml('a\tb\nc\rd')).toBe('a\tb\nc\rd')
   })
 
+  test('escapeXml drops lone surrogates and the non-characters U+FFFE and U+FFFF', async () => {
+    expect(escapeXml('a\uD800b￿c')).toBe('abc')
+    expect(escapeXml('a\uDC00b￾c')).toBe('abc')
+    expect(escapeXml('x\uD83D')).toBe('x')
+    // A whole pair is a real character and stays.
+    expect(escapeXml('a😀b')).toBe('a😀b')
+  })
+
   test('agent details say who, what, for whom and for how long', async () => {
     const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
     expect(agentDetails(s, 'a1', 66_000)).toEqual([
@@ -175,5 +183,21 @@ describe('labels', () => {
     ])
     expect(agentDetails(s, MAIN, 66_000)[0]).toBe('Main (your main agent)')
     expect(agentDetails(s, 'nobody', 66_000)).toEqual([])
+  })
+
+  test("a finished helper's time on the job stops counting when it leaves", async () => {
+    const s = reduce(run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)]), {
+      kind: 'handedBack',
+      agentId: 'a1',
+      reason: 'answer',
+      at: 20_000,
+    })
+    const goneAt = s.agents.a1!.goneAt!
+    const onTheJob = (now: number): string | undefined => agentDetails(s, 'a1', now).find(line => line.startsWith('On the job'))
+    expect(onTheJob(goneAt + 5000)).toBe(onTheJob(goneAt + 60_000))
+    const secs = Math.round((goneAt - 1000) / 1000)
+    expect(onTheJob(goneAt + 5000)).toBe(`On the job: ${Math.floor(secs / 60)}m ${secs % 60}s`)
+    // Before it leaves, the clock still runs.
+    expect(onTheJob(goneAt - 1000)).not.toBe(onTheJob(goneAt))
   })
 })

@@ -5,6 +5,7 @@ import type { Scene } from '../types'
 
 const SCENE = { plugin: 'pixel-office', key: 'scene' } as const
 const CLOCK = { plugin: 'pixel-office', key: 'clock' } as const
+const SELECTED = { plugin: 'pixel-office', key: 'selected' } as const
 const PANE_PROPS = {
   title: 'Office',
   isFocused: false,
@@ -21,9 +22,14 @@ function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   const opened: string[] = []
   let latest: Scene | undefined
   const clockWrites: number[] = []
+  let latestSelected: string | null | undefined
   // The test's `$` has no `state` noun, so the scene is read from what the plugin writes.
   on('state.set', SCENE, ($, e, next) => {
     latest = e.value
+    return next(e)
+  })
+  on('state.set', SELECTED, ($, e, next) => {
+    latestSelected = e.value
     return next(e)
   })
   // The job clock is the same: the writes are all there is to see of it.
@@ -47,8 +53,11 @@ function world(on: On, options: { isCommandBroken?: boolean } = {}) {
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
-  return { clock, opened, scene: () => latest, clockWrites }
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
+  return { clock, opened, scene: () => latest, selected: () => latestSelected, clockWrites }
 }
+
+const endSession = (reason: 'clear' | 'prompt_input_exit') => ({ reason, sessionId: 's-1', resume: { id: 's-1' } })
 
 const ticker = (scene: Scene | undefined): string[] => scene?.ticker.map(line => line.text) ?? []
 const QUESTION = {
@@ -221,6 +230,47 @@ test('a stopped subagent is not reported as having handed in a report', async ($
   expect(ticker(scene())).toContain('Explore was stopped and left')
 })
 
+test('a /clear empties the office and deselects', async ($, on) => {
+  const { clock, scene, selected } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await $.turn.start({ text: 'fix the login bug', turnId: 'turn-1' })
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-agent-1' })
+  expect(Object.keys(scene()?.agents ?? {})).toEqual(['main', 'agent-1'])
+  expect(selected()).toBe('agent-1')
+  const ended = await $.session.end(endSession('clear'))
+  expect(ended).toEqual({ sessionId: 's-1' })
+  expect(Object.keys(scene()?.agents ?? {})).toEqual(['main'])
+  expect(scene()?.order).toEqual(['main'])
+  expect(ticker(scene())).toEqual([])
+  expect(scene()?.briefing).toBeNull()
+  expect(selected()).toBeNull()
+})
+
+test('after a /clear the office draws the new conversation from scratch', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  // This hire is still waiting for a flush when the /clear arrives, and it belongs to the old conversation.
+  await $.agent.spawn(SPAWN)
+  await $.session.end(endSession('clear'))
+  await clock.advance(FLUSH)
+  expect(Object.keys(scene()?.agents ?? {})).toEqual(['main'])
+  await $.turn.start({ text: 'a fresh start', turnId: 'turn-2' })
+  await clock.advance(FLUSH)
+  expect(ticker(scene())).toEqual(['You gave Main a new task'])
+})
+
+test('a session that ends for any other reason leaves the office alone', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  await $.session.end(endSession('prompt_input_exit'))
+  expect(Object.keys(scene()?.agents ?? {})).toEqual(['main', 'agent-1'])
+})
+
 test('the office command opens the pane', async ($, on) => {
   const { opened } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
@@ -293,6 +343,34 @@ test('the job clock is written through state while an agent is selected, and sto
   const afterDeselected = clockWrites.length
   await clock.advance(3000)
   expect(clockWrites.length).toBe(afterDeselected)
+})
+
+test('selecting Main never writes the job clock, as Main has no time on the job', async ($, on) => {
+  const { clock, clockWrites } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-main' })
+  expect(await ui.find({ type: 'Text', text: /^Main \(your main agent\)$/ })).toBeDefined()
+  await clock.advance(3000)
+  expect(clockWrites).toEqual([])
+})
+
+test('the job clock stops when the selected helper has left', async ($, on) => {
+  const { clock, clockWrites } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-agent-1' })
+  await clock.advance(3000)
+  expect(clockWrites.length).toBeGreaterThanOrEqual(2)
+  await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+  const afterLeaving = clockWrites.length
+  await clock.advance(3000)
+  expect(clockWrites.length).toBe(afterLeaving)
 })
 
 test('every helper shows its objective under its name, on both surfaces', async ($, on) => {
