@@ -84,6 +84,14 @@ export function orgRows(scene: Scene): OrgRow[] {
   return rows
 }
 
+// The second line under a helper in the org chart: what it was hired to do, fitted to a column `width` wide.
+export function objectiveLine(scene: Scene, id: string, depth: number, width: number): string {
+  const agent = scene.agents[id]
+  if (agent === undefined || agent.id === MAIN) return ''
+  const objective = clip(agent.description, Math.max(1, width - depth * 2 - 2))
+  return objective === '' ? '' : `${'  '.repeat(depth)}↳ ${objective}`
+}
+
 const pad = (v: number): string => String(v).padStart(2, '0')
 
 export function clockLabel(at: number): string {
@@ -149,7 +157,9 @@ function leaveAt(agent: Agent, now: number): string {
 
 function drawAgent(agent: Agent, scene: Scene, now: number): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
-  const head = `<title>${escapeXml(agentDetails(scene, agent.id, now).join('\n'))}</title>${leaveAt(agent, now)}`
+  // The clock line ticks every second; keeping it out of the drawing keeps an idle office's source unchanged.
+  const facts = agentDetails(scene, agent.id, now).filter(line => !line.startsWith('On the job'))
+  const head = `<title>${escapeXml(facts.join('\n'))}</title>${leaveAt(agent, now)}`
   const tag =
     '<text x="0" y="-14" font-size="3.5" text-anchor="middle" fill="#ffffff" stroke="#2c2c2a" ' +
     `stroke-width="0.8" paint-order="stroke">${escapeXml(agent.label)}</text>`

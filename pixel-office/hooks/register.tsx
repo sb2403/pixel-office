@@ -9,10 +9,13 @@ import { WAITING_TOOLS, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
 const SWEEP_EVERY = 15
+const CLOCK_EVERY = 3
 const QUEUE_MAX = 500
 const UNTRACKED = new Set(['Agent', 'Task'])
 
+// Atoms cannot be imported across files, so each file that reads one declares it again; pane.tsx has the same two.
 const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
+const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 
 const quietly = async (work: () => Promise<void> | void): Promise<void> => {
   try {
@@ -46,7 +49,12 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
       return isSweepTurn && needsSweep(applied, now) ? reduce(applied, { kind: 'tick', at: now }) : applied
     })
   })
-  // The spawn hook only asks for the pane; it opens here, off the spawn path, and a failed open tries again next flush.
+  // The "On the job" clock of a selected agent is the one thing that changes with no event behind it:
+  // about once a second, ask for a redraw while a row is open.
+  await quietly(async () => {
+    if (office.flushes % CLOCK_EVERY === 0 && (await read($, selectedAtom)) !== null) $.ui.invalidate('ui.render')
+  })
+  // The session and spawn hooks only ask for the pane; it opens here, off their path, and a failed open tries again next flush.
   await quietly(async () => {
     if (office.wantsOpen && !office.isOpened) await openPane($, office)
   })
@@ -72,9 +80,8 @@ export const register: Register = (on, options) => {
     await quietly(async () => {
       await $.command.register({ name: 'office', description: 'Show or hide the pixel office' })
     })
-    await quietly(async () => {
-      if (autoOpen === 'session-start') await openPane($, office)
-    })
+    // The session start hook only asks for the pane, as the spawn hook does; the flush opens it.
+    if (autoOpen === 'session-start') office.wantsOpen = true
     return next(e)
   }).catch(($, e, next) => next(e))
 

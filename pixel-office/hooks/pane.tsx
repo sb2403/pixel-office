@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
 import { emptyScene } from './model'
-import { agentDetails, altText, clockLabel, orgRows, renderOffice } from './render'
+import { agentDetails, altText, clockLabel, objectiveLine, orgRows, renderOffice } from './render'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
@@ -28,12 +28,18 @@ export function registerPane(on: On): void {
       return (
         <Box flexDirection="column">
           <Text dimColor>Open this session in the Claude desktop app to see the pixel office.</Text>
-          {shown.map(row => (
-            <Text>
-              {'  '.repeat(row.depth)}
-              {row.label}: {row.status}, {row.place}
-            </Text>
-          ))}
+          {shown.map(row => {
+            const objective = objectiveLine(scene, row.id, row.depth, e.props.bodyColumns)
+            return (
+              <Box key={`row-${row.id}`} flexDirection="column">
+                <Text>
+                  {'  '.repeat(row.depth)}
+                  {row.label}: {row.status}, {row.place}
+                </Text>
+                {objective !== '' && <Text dimColor>{objective}</Text>}
+              </Box>
+            )
+          })}
           {scene.ticker.map(line => (
             <Text dimColor>
               {clockLabel(line.at)} {line.text}
@@ -60,18 +66,28 @@ export function registerPane(on: On): void {
           </Box>
           <Box key="org" flexDirection="column" width={orgWidth}>
             <Text bold>Who reports to whom</Text>
-            {shown.map(row => (
-              <Button
-                key={`agent-${row.id}`}
-                plain
-                onPress={() => update($, selectedAtom, current => (current === row.id ? null : row.id))}
-              >
-                <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'done'}>
-                  {'  '.repeat(row.depth)}
-                  {row.label} · {row.status} · {row.place}
-                </Text>
-              </Button>
-            ))}
+            {shown.map(row => {
+              const objective = objectiveLine(scene, row.id, row.depth, orgWidth)
+              return (
+                <Box key={`row-${row.id}`} flexDirection="column">
+                  <Button
+                    key={`agent-${row.id}`}
+                    plain
+                    onPress={() => update($, selectedAtom, current => (current === row.id ? null : row.id))}
+                  >
+                    <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'done'}>
+                      {'  '.repeat(row.depth)}
+                      {row.label} · {row.status} · {row.place}
+                    </Text>
+                  </Button>
+                  {objective !== '' && (
+                    <Text color={row.status === 'done' ? 'gray' : undefined} dimColor>
+                      {objective}
+                    </Text>
+                  )}
+                </Box>
+              )
+            })}
             {hidden > 0 && <Text dimColor>+{hidden} more</Text>}
             {details.length > 0 && (
               <Box key="details" flexDirection="column" marginTop={1}>

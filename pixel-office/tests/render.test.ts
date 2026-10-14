@@ -104,6 +104,17 @@ describe('renderOffice', () => {
     expect(svg).toContain('>[31mred[0m</text>')
   })
 
+  test('no title carries the ticking On the job line', async () => {
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    const svg = renderOffice(s, 66_000)
+    const titles = [...svg.matchAll(/<title>([\s\S]*?)<\/title>/g)].map(m => m[1] ?? '')
+    expect(titles.length).toBeGreaterThan(1)
+    expect(titles.some(t => t.includes('On the job'))).toBe(false)
+    expect(titles.some(t => t.includes('Task: find auth code'))).toBe(true)
+    expect(renderOffice(s, 66_000)).toBe(renderOffice(s, 66_000))
+    expect(renderOffice(s, 67_000)).toBe(svg)
+  })
+
   test('night and day differ', async () => {
     expect(isNight(new Date(2026, 9, 14, 22).getTime())).toBe(true)
     expect(isNight(new Date(2026, 9, 14, 12).getTime())).toBe(false)

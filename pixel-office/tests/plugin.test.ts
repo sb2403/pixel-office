@@ -121,6 +121,22 @@ test('a spawn returns before the pane opens', async ($, on) => {
   expect(opened).toContain('pixel-office')
 })
 
+test('opening at session start waits for the first flush', { options: { autoOpen: 'session-start' } }, async ($, on) => {
+  const { clock, opened } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  expect(opened).toEqual([])
+  await clock.advance(FLUSH)
+  expect(opened).toEqual(['pixel-office'])
+})
+
+test('never opening on its own means no pane without the command', { options: { autoOpen: 'never' } }, async ($, on) => {
+  const { clock, opened } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  expect(opened).toEqual([])
+})
+
 test('a subagent works, hands back and leaves', async ($, on) => {
   const { clock, scene } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
@@ -231,6 +247,47 @@ test('pressing an agent in the org chart shows and hides its details', async ($,
   expect(await ui.find({ type: 'Text', text: /^Reports to: Main$/ })).toBeDefined()
   await ui.press({ key: 'agent-agent-1' })
   expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeUndefined()
+})
+
+test('the time on the job of a selected agent keeps counting', async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-agent-1' })
+  const before = await ui.find({ type: 'Text', text: /^On the job:/ })
+  expect(before).toBeDefined()
+  await clock.advance(3000)
+  const after = await ui.find({ type: 'Text', text: /^On the job:/ })
+  expect(after).toBeDefined()
+  expect(after?.text).not.toBe(before?.text)
+})
+
+test('every helper shows its objective under its name, on both surfaces', async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const desktop = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  expect(await desktop.find({ type: 'Text', text: /↳ find auth code/ })).toBeDefined()
+  expect(await desktop.findAll({ type: 'Text', text: /↳/ })).toHaveLength(1)
+  const terminal = await $.ui.mount({ plugin: 'pixel-office', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  expect(await terminal.find({ type: 'Text', text: /↳ find auth code/ })).toBeDefined()
+  expect(await terminal.findAll({ type: 'Text', text: /↳/ })).toHaveLength(1)
+})
+
+test('a long objective is clipped to its column', async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn({ ...SPAWN, description: 'find every place the login flow stores or reads a session token' })
+  await clock.advance(FLUSH)
+  const narrow = { ...PANE_PROPS, bodyColumns: 40 }
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: narrow, requestId: 'pixel-office' })
+  const line = await ui.find({ type: 'Text', text: /↳/ })
+  // The column is 24 wide at this size: two for the indent, two for the arrow, the rest for words.
+  expect(line?.text.length).toBeLessThanOrEqual(24)
+  expect(line?.text).toContain('…')
 })
 
 test('the office is drawn as an image, not an interactive frame', async ($, on) => {
