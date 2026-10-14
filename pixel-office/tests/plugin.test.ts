@@ -107,7 +107,10 @@ test('a subagent works, hands back and leaves', async ($, on) => {
   const { clock, scene } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
   await $.agent.spawn(SPAWN)
-  await $.tool.call({ tool: 'Grep', tool_use_id: 'tu-3', pattern: 'login', agentId: 'agent-1' })
+  // The declarations document `agentId` riding along on `tool.call` but leave it out of the input
+  // type, so the call goes through a variable, which skips the object literal's excess-property check.
+  const fromSubagent = { tool: 'Grep', tool_use_id: 'tu-3', pattern: 'login', agentId: 'agent-1' } as const
+  await $.tool.call(fromSubagent)
   await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer' })
   await clock.advance(FLUSH)
   const value = scene()
