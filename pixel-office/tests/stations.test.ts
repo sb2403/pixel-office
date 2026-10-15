@@ -55,6 +55,12 @@ describe('targetOf', () => {
     expect(targetOf('Bash', { command: 'echo a\n  echo b' })).toBe('echo a echo b')
   })
 
+  test('a command shows what it does, not the folder it starts in', async () => {
+    expect(targetOf('Bash', { command: 'cd "/d/Claude/Pixel Office" && gh pr create --title x' })).toBe('gh pr create --title x')
+    expect(targetOf('Bash', { command: 'cd /a && cd b; npm test' })).toBe('npm test')
+    expect(targetOf('Bash', { command: 'cd /work' })).toBe('cd /work')
+  })
+
   test('reads patterns, queries, hosts and outside services', async () => {
     expect(targetOf('Grep', { pattern: 'login' })).toBe('login')
     expect(targetOf('WebSearch', { query: 'pixel art' })).toBe('pixel art')
@@ -112,6 +118,9 @@ describe('plain-English details', () => {
     expect(explainCommand('git commit -m "wip"')).toBe('Save a checkpoint of the work')
     expect(explainCommand('git push -u origin main')).toBe('Upload the work')
     expect(explainCommand('cat log.txt | tail -5')).toBe('Show a file')
+    expect(explainCommand('cd /w && gh pr create --title x')).toBe('Work with GitHub')
+    expect(explainCommand('claude plugin list')).toBe('Manage Claude plugins')
+    expect(explainCommand('python - <<EOF')).toBe('Run a script')
     expect(explainCommand('makefile-lint')).toBe('')
     expect(explainCommand('')).toBe('')
   })

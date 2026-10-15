@@ -204,8 +204,13 @@ const FILLER = /^(find|check|look|search|read|review|audit|investigate|explore|a
 export function topicOf(description: string): string {
   const words = description.split(/\s+/).filter(w => w !== '')
   const keep = words.filter(w => !FILLER.test(w.replace(/[^A-Za-z]/g, '')))
-  const picked = (keep.length > 0 ? keep : words).slice(0, 2).join(' ')
-  return Array.from(picked).slice(0, TOPIC_MAX).join('').trim().toLowerCase()
+  const pool = (keep.length > 0 ? keep : words).map(w => w.toLowerCase())
+  // Whole words only: two if they fit, else the first, cut with an ellipsis if even that is too long.
+  const two = pool.slice(0, 2).join(' ')
+  if (Array.from(two).length <= TOPIC_MAX) return two
+  const first = pool[0] ?? ''
+  const chars = Array.from(first)
+  return chars.length <= TOPIC_MAX ? first : `${chars.slice(0, TOPIC_MAX - 1).join('')}…`
 }
 
 // An agent the engine named keeps its name. The first of a kind is its plain job title; a later one is told apart
