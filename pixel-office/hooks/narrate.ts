@@ -64,7 +64,7 @@ export function doing(activity: Pick<Activity, 'tool' | 'target' | 'detail'>): s
       return 'waiting for you to approve a plan'
   }
   const station = stationFor(tool)
-  if (station === 'taskboard') return 'updating the task board'
+  if (station === 'taskboard') return t === '' ? 'updating the task board' : `updating the task board: ${target}`
   if (station === 'mailroom') {
     const { name, action } = service(tool)
     return action === '' ? `using ${name}${t}` : `using ${name} to ${action}`
