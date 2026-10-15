@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
-import { STATUS_WORDS, agentDetails, altText, clockLabel, isCut, objectiveLine, orgRows, renderOffice, sceneTimeOf } from './render'
+import { STATUS_WORDS, agentDetails, altText, clockLabel, isCut, objectiveLine, officeSource, orgRows } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -73,7 +73,7 @@ export function registerPane(on: On): void {
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
     return (
       <Box flexDirection="column" gap={1}>
-        <Svg source={renderOffice(scene, Math.min(now, sceneTimeOf(scene)), undefined, now)} alt={altText(scene)} />
+        <Svg source={officeSource(scene, now)} alt={altText(scene)} />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>

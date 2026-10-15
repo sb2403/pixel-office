@@ -342,10 +342,8 @@ function badge(extra: number): string {
   return `<g>${rect(196, 1, 42, 7, '#2c2c2a')}<text x="217" y="6.3" font-size="4.5" text-anchor="middle" fill="#ffffff">+${extra} more</text></g>`
 }
 
-// The moment the scene last changed: an event, the start of a walk, an error. The picture is drawn as of this
-// moment, not as of the clock, so it stays the same between changes. A picture whose source changes is drawn
-// again by the desktop, which restarts every walk and can resize it under the person's scroll; one whose source
-// is unchanged plays on undisturbed. `clockNow`, the real time, only decides day or night.
+// The moment the scene last changed: an event, the start of a walk, an error. It tells the pane when the picture
+// has to be drawn again.
 export function sceneTimeOf(scene: Scene): number {
   let latest = scene.ticker[scene.ticker.length - 1]?.at ?? 0
   for (const a of Object.values(scene.agents)) {
@@ -354,13 +352,29 @@ export function sceneTimeOf(scene: Scene): number {
   return latest
 }
 
-export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET, clockNow = now): string {
+// The picture the pane shows. A picture whose source changes is drawn again by the desktop, which restarts every
+// walk in it and can resize it under the person's scroll, so the source only changes when the scene did: it is
+// drawn once, as of that moment, and the same text comes back until the next change. Walks and blinking play on
+// inside it meanwhile. Redrawn at the real time, so nobody is put back where they were a moment ago.
+let drawn: { key: string; source: string } | null = null
+
+export function officeSource(scene: Scene, now: number): string {
+  const key = `${sceneTimeOf(scene)}:${scene.order.length}:${scene.ticker.length}:${isNight(now)}`
+  if (drawn === null || drawn.key !== key) drawn = { key, source: renderOffice(scene, now) }
+  return drawn.source
+}
+
+export function forgetOffice(): void {
+  drawn = null
+}
+
+export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {
   const ranked = Object.values(scene.agents)
     .filter(a => !(a.phase === 'gone' && a.goneAt !== null && now >= a.goneAt))
     .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt))
   const head =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" width="${WIDTH * 4}" height="${HEIGHT * 4}" ` +
-    `shape-rendering="crispEdges" font-family="monospace">${OFFICE_DEFS}${officeBase(isNight(clockNow))}`
+    `shape-rendering="crispEdges" font-family="monospace">${OFFICE_DEFS}${officeBase(isNight(now))}`
   const props = overlays(scene, now)
   const build = (withDecor: boolean, count: number): string => {
     const drawn = ranked
