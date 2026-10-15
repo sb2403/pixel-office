@@ -143,6 +143,19 @@ describe('recapOf', () => {
     expect(recapSummary(recap)[1]).toBe('Took 20s · no helpers')
   })
 
+  test('the recap says when Main edited files itself instead of hiring a helper', async () => {
+    const edit = (id: string, at: number): OfficeEvent => ({ kind: 'toolStarted', agentId: MAIN, tool: 'Edit', target: 'a.ts', detail: '', callId: id, at: s(at) })
+    const none = run([turn(0), turnEnd(5)])
+    expect(recapOf(none, s(6))!.mainEdits).toBe(0)
+    expect(recapSummary(recapOf(none, s(6))!).join(' ')).not.toContain('file edit')
+    const some = run([turn(0), edit('e1', 1), edit('e2', 2), hire('a1', 3), turnEnd(9)])
+    expect(recapOf(some, s(10))!.mainEdits).toBe(2)
+    expect(recapSummary(recapOf(some, s(10))!)[2]).toBe('Main made 2 file edits itself, not through a helper')
+    // A helper's own edit is its job, not Main's.
+    const delegated = run([turn(0), hire('a1', 1), { ...edit('e1', 2), agentId: 'a1' }, turnEnd(9)])
+    expect(recapOf(delegated, s(10))!.mainEdits).toBe(0)
+  })
+
   test('rows say how each job ended, in words', async () => {
     const scene = run([turn(0), hire('a1', 1, { description: '' }), hire('a2', 1, { description: '' }), hire('a3', 1, { description: '' }), back('a1', 5, used(41_200)), back('a2', 6, null, 'aborted'), back('a3', 7, null, 'error'), turnEnd(9)])
     expect(recapRows(recapOf(scene, s(10))!)).toEqual([

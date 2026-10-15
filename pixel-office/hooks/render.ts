@@ -1,4 +1,5 @@
 import type { Agent, Scene, StationId } from '../types'
+import { etaDetail, etaOf, etaWords } from './eta'
 import { MAIN, isCoordinating, isWalkingAt, positionAt, waitingOn } from './model'
 import { doing } from './narrate'
 import { OFFICE_DEFS, officeBase, officeDecor, rect } from './office'
@@ -65,7 +66,7 @@ export function statusOf(scene: Scene, agent: Agent): OrgRow['status'] {
   }
 }
 
-export function orgRows(scene: Scene): OrgRow[] {
+export function orgRows(scene: Scene, now: number | null = null): OrgRow[] {
   const children = new Map<string, string[]>()
   for (const id of scene.order) {
     const agent = scene.agents[id]
@@ -83,7 +84,9 @@ export function orgRows(scene: Scene): OrgRow[] {
     seen.add(id)
     const agent = scene.agents[id]
     if (agent === undefined) return
-    rows.push({ id, depth, label: agent.label, status: statusOf(scene, agent), now: nowOf(scene, agent) })
+    const eta = now === null ? null : etaOf(scene, agent, now)
+    const activity = nowOf(scene, agent)
+    rows.push({ id, depth, label: agent.label, status: statusOf(scene, agent), now: eta === null ? activity : `${activity}, ${etaWords(eta)}` })
     for (const child of children.get(id) ?? []) visit(child, depth + 1)
   }
   visit(MAIN, 0)
@@ -150,7 +153,7 @@ export const excerptOf = (text: string): string => gist(text, EXCERPT)
 export const isCut = (text: string): boolean => excerptOf(text).endsWith('…')
 
 // Lines that only belong in the panel: the brief and the report are long, and the job clock ticks every second.
-const PANEL_ONLY = ['Brief:', 'Report:', 'On the job:', 'Used']
+const PANEL_ONLY = ['Brief:', 'Report:', 'On the job:', 'Expected:', 'Used']
 
 // The details box: who this is, what its kind of agent does, the job it was given, what it is doing, who it
 // works for and how that boss works with it, and what it handed back.
@@ -187,6 +190,8 @@ export function agentDetails(scene: Scene, id: string, now: number): string[] {
     const until = agent.phase === 'gone' && agent.goneAt !== null ? Math.min(now, agent.goneAt) : now
     const secs = Math.max(0, Math.round((until - agent.arrivedAt) / 1000))
     lines.push(`On the job: ${Math.floor(secs / 60)}m ${secs % 60}s`)
+    const eta = etaOf(scene, agent, now)
+    if (eta !== null) lines.push(etaDetail(eta))
   }
   return lines
 }
@@ -337,13 +342,25 @@ function badge(extra: number): string {
   return `<g>${rect(196, 1, 42, 7, '#2c2c2a')}<text x="217" y="6.3" font-size="4.5" text-anchor="middle" fill="#ffffff">+${extra} more</text></g>`
 }
 
-export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {
+// The moment the scene last changed: an event, the start of a walk, an error. The picture is drawn as of this
+// moment, not as of the clock, so it stays the same between changes. A picture whose source changes is drawn
+// again by the desktop, which restarts every walk and can resize it under the person's scroll; one whose source
+// is unchanged plays on undisturbed. `clockNow`, the real time, only decides day or night.
+export function sceneTimeOf(scene: Scene): number {
+  let latest = scene.ticker[scene.ticker.length - 1]?.at ?? 0
+  for (const a of Object.values(scene.agents)) {
+    latest = Math.max(latest, a.lastEventAt, a.arrivedAt, a.lastErrorAt ?? 0, a.walk?.startedAt ?? 0)
+  }
+  return latest
+}
+
+export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET, clockNow = now): string {
   const ranked = Object.values(scene.agents)
     .filter(a => !(a.phase === 'gone' && a.goneAt !== null && now >= a.goneAt))
     .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt))
   const head =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" width="${WIDTH * 4}" height="${HEIGHT * 4}" ` +
-    `shape-rendering="crispEdges" font-family="monospace">${OFFICE_DEFS}${officeBase(isNight(now))}`
+    `shape-rendering="crispEdges" font-family="monospace">${OFFICE_DEFS}${officeBase(isNight(clockNow))}`
   const props = overlays(scene, now)
   const build = (withDecor: boolean, count: number): string => {
     const drawn = ranked

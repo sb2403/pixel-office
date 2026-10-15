@@ -76,7 +76,9 @@ export type TickerLine = { at: number; text: string; routineOf: string | null }
 
 // One job: everything from a message you send until the next one. A turn that carries on without a new message
 // (a background helper reporting in, say) belongs to the same job. `task` is the start of your message.
-export type Job = { startedAt: number; endedAt: number | null; task: string; mainUsage: Usage | null }
+// `mainEdits` counts the file edits Main made itself this job rather than leaving them to a helper; a job saved
+// before it was counted has none.
+export type Job = { startedAt: number; endedAt: number | null; task: string; mainUsage: Usage | null; mainEdits?: number }
 
 // A finished job as the history keeps it, across sessions, when that is switched on.
 export type JobRecord = { startedAt: number; task: string; tookMs: number; helpers: number; peak: number; tokens: number | null }
