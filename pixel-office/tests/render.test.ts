@@ -26,6 +26,7 @@ const spawnEv = (id: string, at: number): OfficeEvent => ({
   name: null,
   isTeammate: false,
   isBackground: false,
+  isResume: false,
   at,
 })
 const readEv = (id: string, target: string, at: number): OfficeEvent => ({

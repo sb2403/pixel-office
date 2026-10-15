@@ -17,6 +17,7 @@ const hire = (extra: Partial<Extract<OfficeEvent, { kind: 'spawned' }>> = {}): O
   name: null,
   isTeammate: false,
   isBackground: false,
+  isResume: false,
   at: 1,
   ...extra,
 })
@@ -92,6 +93,8 @@ test('a hire says whether the boss waits for the report, works alongside, or gai
   expect(line({})).toBe('Main hired Researcher and is waiting for its report: find auth code')
   expect(line({ isBackground: true })).toBe('Main hired Researcher to work alongside it: find auth code')
   expect(line({ isTeammate: true, isBackground: true, name: 'scout' })).toBe('Main added Scout to the team: find auth code')
+  expect(line({ isResume: true })).toBe('Main called Researcher back and is waiting for its report: find auth code')
+  expect(line({ isResume: true, isBackground: true })).toBe('Main called Researcher back to work alongside it: find auth code')
 })
 
 test('hand-backs say whether the report came, the run was stopped or it failed', async () => {

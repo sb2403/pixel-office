@@ -166,6 +166,7 @@ export const register: Register = (on, options) => {
         name: e.name ?? null,
         isTeammate: e.isTeammate === true,
         isBackground: e.background === true,
+        isResume: e.resume !== undefined,
         at: await $.clock.now(),
       })
       if (autoOpen === 'on-first-subagent' && !office.isOpened) office.wantsOpen = true

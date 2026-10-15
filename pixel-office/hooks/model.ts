@@ -261,6 +261,38 @@ function endBriefing(scene: Scene, agent: Agent, at: number): Scene {
   return out
 }
 
+// The agent walks to the meeting room to be briefed, its boss joins it there unless busy, and the whiteboard
+// shows the job.
+function brief(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
+  let s = put(scene, { ...moveTo(scene, agent, 'meeting', ev.at), phase: 'briefing' })
+  const parent = s.agents[ev.parentId]
+  if (parent !== undefined && parent.activity === null && parent.phase !== 'gone') {
+    s = put(s, { ...moveTo(s, parent, 'meeting', ev.at), phase: 'working', lastEventAt: ev.at })
+  }
+  return { ...s, briefing: ev.description }
+}
+
+// A called-back agent comes back by the elevator if it had left, starts a new stint and is briefed again. The
+// message it is called back with is its new brief; with none, the old brief still stands.
+function callBack(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
+  const isBack = agent.phase === 'gone'
+  const returning: Agent = {
+    ...agent,
+    ...(isBack ? { station: 'elevator' as const, slot: 0, pos: slotPoint('elevator', 0), walk: null, desk: nextDesk(scene) } : {}),
+    parentId: ev.parentId,
+    description: ev.description,
+    brief: ev.brief === '' ? agent.brief : ev.brief,
+    isBackground: ev.isBackground,
+    outcome: null,
+    goneAt: null,
+    carry: null,
+    activity: null,
+    arrivedAt: ev.at,
+    lastEventAt: ev.at,
+  }
+  return brief(scene, returning, ev)
+}
+
 function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   const existing = scene.agents[ev.id]
   let s = scene
@@ -274,12 +306,9 @@ function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   }
   if (existing === undefined) {
     const fresh = { ...arrive(s, ev.id, ev.type, labelFor(s, ev.type, ev.name), ev.at), ...hire }
-    s = addAgent(s, { ...moveTo(s, fresh, 'meeting', ev.at), phase: 'briefing' })
-    const parent = s.agents[ev.parentId]
-    if (parent !== undefined && parent.activity === null && parent.phase !== 'gone') {
-      s = put(s, { ...moveTo(s, parent, 'meeting', ev.at), phase: 'working', lastEventAt: ev.at })
-    }
-    s = { ...s, briefing: ev.description }
+    s = brief(addAgent(s, fresh), fresh, ev)
+  } else if (ev.isResume) {
+    s = callBack(s, existing, ev)
   } else {
     const label = existing.type === 'contractor' ? labelFor(s, ev.type, ev.name) : existing.label
     s = put(s, {

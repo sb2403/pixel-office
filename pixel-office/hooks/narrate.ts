@@ -103,9 +103,12 @@ export function narrate(scene: Scene, ev: OfficeEvent): string | null {
     case 'spawned': {
       const who = nameOf(scene, ev.id)
       const boss = nameOf(scene, ev.parentId)
-      if (ev.isTeammate) return `${boss} added ${who} to the team: ${ev.description}`
-      if (ev.isBackground) return `${boss} hired ${who} to work alongside it: ${ev.description}`
-      return `${boss} hired ${who} and is waiting for its report: ${ev.description}`
+      if (ev.isTeammate) {
+        return ev.isResume ? `${boss} brought ${who} back to the team: ${ev.description}` : `${boss} added ${who} to the team: ${ev.description}`
+      }
+      const verb = ev.isResume ? `called ${who} back` : `hired ${who}`
+      if (ev.isBackground) return `${boss} ${verb} to work alongside it: ${ev.description}`
+      return `${boss} ${verb} and is waiting for its report: ${ev.description}`
     }
     case 'toolStarted':
       return `${nameOf(scene, ev.agentId)} is ${doing(ev)}`

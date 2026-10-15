@@ -26,6 +26,7 @@ const spawn = (id: string, at: number, extra: Partial<Extract<OfficeEvent, { kin
   name: null,
   isTeammate: false,
   isBackground: false,
+  isResume: false,
   at,
   ...extra,
 })
@@ -428,6 +429,53 @@ describe('coordinating', () => {
     const coffee = reduce(reduce(s, { kind: 'tick', at: 2100 + LINGER_MS }), { kind: 'tick', at: 2100 + IDLE_MS })
     expect(coffee.agents.a1!.phase).toBe('idle')
     expect(isCoordinating(coffee, coffee.agents[MAIN]!)).toBe(false)
+  })
+})
+
+describe('called back', () => {
+  const back = (id: string, at: number): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report: 'found it', at })
+  const again = (at: number, extra: Partial<Extract<OfficeEvent, { kind: 'spawned' }>> = {}) =>
+    spawn('a1', at, { isResume: true, description: 'check one more file', brief: 'Also look at session.ts', ...extra })
+
+  test('a helper that had left comes back by the elevator, is briefed again and is waited on', async () => {
+    const gone = run([{ kind: 'turnStarted', isContinuation: false, at: 500 }, spawn('a1', 1000), back('a1', 5000)])
+    expect(gone.agents.a1!.phase).toBe('gone')
+    const s = reduce(gone, again(60_000))
+    const a1 = s.agents.a1!
+    expect(a1.label).toBe('Researcher')
+    expect(Object.keys(s.agents)).toHaveLength(2)
+    expect(a1.phase).toBe('briefing')
+    expect(a1.station).toBe('meeting')
+    expect(a1.walk?.points[0]).toEqual(slotPoint('elevator', 0))
+    expect(a1.goneAt).toBeNull()
+    expect(a1.outcome).toBeNull()
+    expect(a1.arrivedAt).toBe(60_000)
+    expect(a1.brief).toBe('Also look at session.ts')
+    // Its last report stays until it hands in a new one.
+    expect(a1.report).toBe('found it')
+    expect(s.briefing).toBe('check one more file')
+    expect(waitingOn(s, MAIN).map(a => a.id)).toEqual(['a1'])
+    expect(lastLine(s)).toBe('Main called Researcher back and is waiting for its report: check one more file')
+  })
+
+  test('a call-back with no new message keeps the old brief', async () => {
+    const s = reduce(run([spawn('a1', 1000), back('a1', 5000)]), again(60_000, { brief: '' }))
+    expect(s.agents.a1!.brief).toBe('Find where the login flow creates a session')
+  })
+
+  test('a teammate on a break is brought back to the team without the elevator', async () => {
+    const resting = run([spawn('t1', 1000, { name: 'scout', isTeammate: true, isBackground: true }), back('t1', 5000)])
+    expect(resting.agents.t1!.station).toBe('breakroom')
+    const s = reduce(resting, spawn('t1', 60_000, { name: 'scout', isTeammate: true, isBackground: true, isResume: true }))
+    expect(s.agents.t1!.phase).toBe('briefing')
+    expect(s.agents.t1!.walk?.points[0]).not.toEqual(slotPoint('elevator', 0))
+    expect(lastLine(s)).toBe('Main brought Scout back to the team: find auth code')
+  })
+
+  test('a call-back the office never saw the start of arrives as a new face', async () => {
+    const s = run([spawn('zz', 1000, { isResume: true })])
+    expect(s.agents.zz!.label).toBe('Researcher')
+    expect(lastLine(s)).toBe('Main called Researcher back and is waiting for its report: find auth code')
   })
 })
 

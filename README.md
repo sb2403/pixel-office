@@ -149,6 +149,8 @@ Either way the new value applies to sessions you start afterwards. `claude plugi
 
 **Main says "coordinating"?** It hired helpers and is waiting for their reports, with nothing else in hand. Its bubble and its row name who it is waiting on. However long they take, a coordinating boss is never sent to the break room. Any helper that hires its own helpers coordinates the same way.
 
+**A helper that left comes back?** Its boss called it back for more work, with everything it knew the first time. It steps out of the elevator again (a teammate walks over from the break room), is briefed in the meeting room, and the feed says "Main called Researcher back". It keeps its name, and its last report stays in its details box until it hands in a new one.
+
 **Someone is carrying a folder or an envelope?** A folder is a report on its way to the boss who asked for it; an envelope is a message on its way to another agent. Each disappears at the moment it is handed over.
 
 **A name tag is under someone's feet?** Two characters stand so close that their name tags would cover each other, as when a boss sits beside the helper it is briefing. One tag moves below the feet so both stay readable.

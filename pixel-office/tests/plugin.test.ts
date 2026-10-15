@@ -181,6 +181,21 @@ test('a subagent works, hands back and leaves', async ($, on) => {
   expect(value?.agents['agent-1']?.brief).toBe('Task Find where the login flow creates a session.')
 })
 
+test('a helper that is called back after leaving comes back instead of being hired again', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+  expect(scene()?.agents['agent-1']?.phase).toBe('gone')
+  await $.agent.spawn({ ...SPAWN, prompt: 'Now check session.ts too', resume: { agentId: 'agent-1' } })
+  await clock.advance(FLUSH)
+  expect(ticker(scene())).toContain('Main called Researcher back and is waiting for its report: find auth code')
+  expect(scene()?.agents['agent-1']?.phase).toBe('briefing')
+  expect(scene()?.agents['agent-1']?.brief).toBe('Now check session.ts too')
+  expect(Object.keys(scene()?.agents ?? {})).toHaveLength(2)
+})
+
 test('a helper hired in the background leaves its boss free', async ($, on) => {
   const { clock, scene } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })

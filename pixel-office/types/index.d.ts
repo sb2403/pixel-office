@@ -82,6 +82,8 @@ export type OfficeEvent =
       name: string | null
       isTeammate: boolean
       isBackground: boolean
+      // True when this spawn continues an agent that ran before (called back, or a teammate brought back).
+      isResume: boolean
       at: number
     }
   | { kind: 'toolStarted'; agentId: string; tool: string; target: string; detail: string; callId: string; at: number }

@@ -43,6 +43,7 @@ const spawn = (id: string, type: string, description: string, brief: string, sec
   name: null,
   isTeammate: false,
   isBackground: false,
+  isResume: false,
   at: at(seconds),
 })
 const begin = (agentId: string, tool: string, target: string, callId: string, seconds: number, detail = ''): OfficeEvent => ({
