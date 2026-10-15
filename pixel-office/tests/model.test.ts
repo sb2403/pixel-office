@@ -610,7 +610,7 @@ describe('review focus', () => {
     let s = emptyScene()
     for (let i = 0; i < 20; i++) s = reduce(s, spawn(`h${i}`, i))
     expect(s.ticker).toHaveLength(8)
-    expect(lastLine(s)).toBe('Main hired Researcher 20 and is waiting for its report: find auth code')
+    expect(lastLine(s)).toBe('Main hired Auth code 19 and is waiting for its report: find auth code')
   })
 
   test('routine work keeps one line per agent, its latest, so busy helpers cannot push the story out', async () => {
