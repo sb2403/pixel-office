@@ -7,7 +7,10 @@ import {
   STATION_ORDER,
   WIDTH,
   clip,
+  detailOf,
   doorOf,
+  explainCommand,
+  gist,
   pathLength,
   pointAlong,
   route,
@@ -85,6 +88,45 @@ describe('clip', () => {
     expect(clip('a\uD800b\uDC00c\uFFFEd\uFFFFe')).toBe('abcde')
     expect(clip('hi \uD83D')).toBe('hi')
     expect(clip('a😀b')).toBe('a😀b')
+  })
+})
+
+describe('plain-English details', () => {
+  test('a command uses the description Claude gave it', async () => {
+    expect(detailOf('Bash', { command: 'npm test', description: 'Run the test suite' })).toBe('Run the test suite')
+    expect(detailOf('PowerShell', { command: 'dir', description: '  List   the files\n' })).toBe('List the files')
+  })
+
+  test('a command Claude did not describe falls back to what it is commonly for', async () => {
+    expect(detailOf('Bash', { command: 'npm test' })).toBe('Test the code')
+    expect(detailOf('Bash', { command: 'ls -la' })).toBe('Look through folders')
+    expect(detailOf('Bash', { command: 'some-tool --flag' })).toBe('')
+  })
+
+  test('the explainer reads past cd, settings, sudo and npx to the first real step', async () => {
+    expect(explainCommand('cd /work/app && npm run build')).toBe('Build the project')
+    expect(explainCommand('CI=1 NODE_ENV=test npx jest auth')).toBe('Test the code')
+    expect(explainCommand('sudo pip install requests')).toBe('Install packages')
+    expect(explainCommand('git status && git diff')).toBe('See what has changed')
+    expect(explainCommand('git commit -m "wip"')).toBe('Save a checkpoint of the work')
+    expect(explainCommand('git push -u origin main')).toBe('Upload the work')
+    expect(explainCommand('cat log.txt | tail -5')).toBe('Show a file')
+    expect(explainCommand('makefile-lint')).toBe('')
+    expect(explainCommand('')).toBe('')
+  })
+
+  test('a message reads as its summary, else its first line', async () => {
+    expect(detailOf('SendMessage', { to: 'scout', summary: 'assign task 1', message: 'start on task #1' })).toBe('assign task 1')
+    expect(detailOf('SendMessage', { to: 'scout', message: 'Found the bug\nIt is in auth.ts' })).toBe('Found the bug')
+  })
+
+  test('other tools have no detail', async () => {
+    expect(detailOf('Read', { file_path: '/a/b.ts', description: 'not used' })).toBe('')
+  })
+
+  test('gist drops Markdown marks and fits the text on one line', async () => {
+    expect(gist('## Summary\n**Found** the `login` code', 80)).toBe('Summary Found the login code')
+    expect(gist('a'.repeat(50), 10)).toBe(`${'a'.repeat(9)}…`)
   })
 })
 

@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BRIEFING_MAX_MS, GONE_KEEP, IDLE_MS, LINGER_MS, MAIN, emptyScene, needsSweep, positionAt, reduce } from '../hooks/model'
+import {
+  BRIEFING_MAX_MS,
+  GONE_KEEP,
+  IDLE_MS,
+  LINGER_MS,
+  MAIN,
+  emptyScene,
+  isCoordinating,
+  needsSweep,
+  positionAt,
+  reduce,
+  waitingOn,
+} from '../hooks/model'
 import { slotPoint } from '../hooks/stations'
 import type { OfficeEvent, Scene } from '../types'
 
@@ -10,16 +22,19 @@ const spawn = (id: string, at: number, extra: Partial<Extract<OfficeEvent, { kin
   parentId: MAIN,
   type: 'Explore',
   description: 'find auth code',
+  brief: 'Find where the login flow creates a session',
   name: null,
   isTeammate: false,
+  isBackground: false,
   at,
   ...extra,
 })
-const start = (agentId: string, tool: string, target: string, callId: string, at: number): OfficeEvent => ({
+const start = (agentId: string, tool: string, target: string, callId: string, at: number, detail = ''): OfficeEvent => ({
   kind: 'toolStarted',
   agentId,
   tool,
   target,
+  detail,
   callId,
   at,
 })
@@ -44,19 +59,21 @@ describe('arrivals and briefings', () => {
   test('a new subagent arrives by elevator and is briefed in the meeting room', async () => {
     const s = run([spawn('a1', 1000)])
     const a1 = s.agents.a1!
-    expect(a1.label).toBe('Explore')
+    expect(a1.label).toBe('Researcher')
+    expect(a1.role).toBe('Researcher')
+    expect(a1.brief).toBe('Find where the login flow creates a session')
     expect(a1.phase).toBe('briefing')
     expect(a1.station).toBe('meeting')
     expect(a1.walk?.points[0]).toEqual(slotPoint('elevator', 0))
     expect(a1.walk?.startedAt).toBe(1000)
     expect(s.briefing).toBe('find auth code')
     expect(s.agents[MAIN]!.station).toBe('meeting')
-    expect(lastLine(s)).toBe('Main hired Explore: find auth code')
+    expect(lastLine(s)).toBe('Main hired Researcher and is waiting for its report: find auth code')
   })
 
   test('a second agent of the same type gets a numbered label and its own desk', async () => {
     const s = run([spawn('a1', 1000), spawn('a2', 1000)])
-    expect(s.agents.a2!.label).toBe('Explore 2')
+    expect(s.agents.a2!.label).toBe('Researcher 2')
     expect(s.agents.a2!.desk).not.toBe(s.agents.a1!.desk)
   })
 
@@ -67,7 +84,7 @@ describe('arrivals and briefings', () => {
     expect(s.agents.a1!.activity?.tool).toBe('Read')
     expect(s.briefing).toBeNull()
     expect(s.agents[MAIN]!.station).toBe('office')
-    expect(lastLine(s)).toBe('Explore is reading auth.ts')
+    expect(lastLine(s)).toBe('Researcher is reading auth.ts')
   })
 
   test('a walk that changes course starts where the agent is now', async () => {
@@ -83,7 +100,7 @@ describe('work, errors and waiting', () => {
     const s = run([spawn('a1', 1000), start('a1', 'Bash', 'npm test', 'c1', 3000), end('a1', 'c1', 4000, true)])
     expect(s.agents.a1!.lastErrorAt).toBe(4000)
     expect(s.agents.a1!.activity).toBeNull()
-    expect(lastLine(s)).toBe('Explore hit an error')
+    expect(lastLine(s)).toBe('Researcher hit an error')
   })
 
   test('ending an older call keeps the newer activity', async () => {
@@ -110,19 +127,37 @@ describe('work, errors and waiting', () => {
     const asked = reduce(s, { kind: 'waiting', agentId: null, tool: 'Bash', at: 3100 })
     expect(asked.agents.a1!.phase).toBe('waiting')
     expect(asked.agents.a1!.station).toBe('reception')
-    expect(lastLine(asked)).toBe('Explore needs your permission to use Bash')
+    expect(lastLine(asked)).toBe('Researcher needs your permission to run a command')
     const other = reduce(s, { kind: 'waiting', agentId: null, tool: 'Edit', at: 3100 })
     expect(other.agents[MAIN]!.station).toBe('reception')
   })
 
-  test('SendMessage walks to the recipient and back', async () => {
+  test('SendMessage walks to the recipient with an envelope, hands it over and walks back', async () => {
     const s = run([spawn('a1', 1000), spawn('a2', 1000, { type: 'Plan' })])
     const plan = s.agents.a2!
-    const sent = reduce(s, start('a1', 'SendMessage', 'Plan', 'm1', 5000))
+    const sent = reduce(s, start('a1', 'SendMessage', 'Planner', 'm1', 5000))
     const walk = sent.agents.a1!.walk!
     expect(walk.points).toContainEqual({ x: plan.pos.x + 9, y: plan.pos.y })
     expect(walk.points[walk.points.length - 1]).toEqual(sent.agents.a1!.pos)
     expect(sent.agents.a1!.station).toBe(s.agents.a1!.station)
+    const carry = sent.agents.a1!.carry!
+    expect(carry.item).toBe('message')
+    expect(carry.until).toBeGreaterThan(5000)
+    expect(carry.until).toBeLessThan(5000 + walk.durationMs)
+    // Its next walk is a new errand: the envelope was handed over.
+    expect(reduce(sent, start('a1', 'Read', 'x.ts', 'r1', 9000)).agents.a1!.carry).toBeNull()
+  })
+
+  test('a message finds its recipient by the name the engine knows it by', async () => {
+    const s = run([spawn('a1', 1000), spawn('t1', 1000, { name: 'scout', isTeammate: true })])
+    const sent = reduce(s, start('a1', 'SendMessage', 'scout', 'm1', 5000))
+    expect(sent.agents.a1!.station).toBe(s.agents.a1!.station)
+    expect(sent.agents.a1!.carry?.item).toBe('message')
+    const toMain = reduce(s, start('a1', 'SendMessage', 'main', 'm2', 5000))
+    expect(toMain.agents.a1!.carry?.item).toBe('message')
+    const lost = reduce(s, start('a1', 'SendMessage', 'nobody', 'm3', 5000))
+    expect(lost.agents.a1!.station).toBe('meeting')
+    expect(lost.agents.a1!.carry).toBeNull()
   })
 
   test('todos update the task board counts', async () => {
@@ -188,7 +223,7 @@ describe('the end of a turn', () => {
   })
 
   test('a teammate resting in the break room is left alone', async () => {
-    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', at: 9000 }])
+    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', report: '', at: 9000 }])
     const later = reduce(s, { kind: 'tick', at: 9000 + 5 * IDLE_MS })
     expect(later.agents.t1).toBe(s.agents.t1)
     expect(later.agents.t1!.station).toBe('breakroom')
@@ -197,11 +232,14 @@ describe('the end of a turn', () => {
   })
 
   test('a stopped subagent leaves like any other', async () => {
-    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'aborted', at: 2000 }])
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', at: 2000 }])
     expect(s.agents.a1!.phase).toBe('gone')
-    expect(lastLine(s)).toBe('Explore was stopped and left')
-    const failed = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'error', at: 2000 }])
-    expect(lastLine(failed)).toBe('Explore ran into a problem, reported to Main and left')
+    expect(s.agents.a1!.outcome).toBe('stopped')
+    expect(s.agents.a1!.carry).toBeNull()
+    expect(s.ticker.map(line => line.text)).toContain('Researcher was stopped and left')
+    const failed = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'error', report: '', at: 2000 }])
+    expect(failed.agents.a1!.outcome).toBe('failed')
+    expect(failed.ticker.map(line => line.text)).toContain('Researcher ran into a problem, told Main and left')
   })
 })
 
@@ -209,28 +247,39 @@ describe('hand-backs and departures', () => {
   test('a finished subagent reports to its parent and leaves by elevator', async () => {
     const s = run([spawn('a1', 1000), start('a1', 'Read', 'auth.ts', 'c1', 3000), end('a1', 'c1', 4000)])
     const main = s.agents[MAIN]!
-    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', at: 20000 })
+    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'Sessions start in auth.ts', at: 20000 })
     const a1 = done.agents.a1!
     expect(a1.phase).toBe('gone')
     expect(a1.station).toBe('elevator')
     expect(a1.walk?.points).toContainEqual({ x: main.pos.x + 9, y: main.pos.y })
     expect(a1.goneAt).toBe(20000 + a1.walk!.durationMs)
-    expect(lastLine(done)).toBe('Explore handed its report to Main and left')
+    expect(a1.report).toBe('Sessions start in auth.ts')
+    expect(a1.outcome).toBe('reported')
+    // The report is carried to Main and handed over part way along the walk out.
+    expect(a1.carry?.item).toBe('report')
+    expect(a1.carry!.until).toBeGreaterThan(20000)
+    expect(a1.carry!.until).toBeLessThan(a1.goneAt!)
+    expect(done.ticker.map(line => line.text).slice(-2)).toEqual([
+      'Researcher handed its report to Main and left: Sessions start in auth.ts',
+      'Main has every report back and is reviewing the results',
+    ])
   })
 
   test('a teammate reports and takes a break instead of leaving', async () => {
-    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', at: 9000 }])
-    expect(s.agents.t1!.label).toBe('scout')
+    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', report: '', at: 9000 }])
+    expect(s.agents.t1!.label).toBe('Scout')
+    expect(s.agents.t1!.name).toBe('scout')
     expect(s.agents.t1!.phase).toBe('idle')
     expect(s.agents.t1!.station).toBe('breakroom')
-    expect(lastLine(s)).toBe('scout reported to Main and took a break')
+    expect(lastLine(s)).toBe('Scout reported to Main and took a break')
   })
 
   test('a departed agent that works again comes back through the elevator', async () => {
-    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'answer', at: 2000 }])
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 2000 }])
     const back = reduce(s, start('a1', 'Read', 'again.ts', 'c9', 60000))
     expect(back.agents.a1!.phase).toBe('working')
     expect(back.agents.a1!.goneAt).toBeNull()
+    expect(back.agents.a1!.outcome).toBeNull()
     expect(back.agents.a1!.walk?.points[0]).toEqual(slotPoint('elevator', 0))
   })
 
@@ -238,7 +287,7 @@ describe('hand-backs and departures', () => {
     let s = emptyScene()
     for (let i = 0; i < 60; i++) {
       s = reduce(s, spawn(`x${i}`, i))
-      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, reason: 'answer', at: i + 0.5 })
+      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, reason: 'answer', report: '', at: i + 0.5 })
     }
     const gone = Object.values(s.agents).filter(a => a.phase === 'gone')
     expect(gone.length).toBe(GONE_KEEP)
@@ -307,13 +356,89 @@ describe('sweeps', () => {
   })
 })
 
+describe('names', () => {
+  test('helpers are named for the job their kind of agent does', async () => {
+    const s = run([
+      spawn('a1', 1000, { type: 'Plan' }),
+      spawn('a2', 1000, { type: 'general-purpose' }),
+      spawn('a3', 1000, { type: 'my-plugin:code-reviewer' }),
+      spawn('a4', 1000, { type: 'Explore', name: 'scout' }),
+    ])
+    expect(['a1', 'a2', 'a3', 'a4'].map(id => s.agents[id]!.label)).toEqual(['Planner', 'Assistant', 'Code reviewer', 'Scout'])
+    expect(s.agents.a4!.role).toBe('Researcher')
+    expect(s.agents[MAIN]!.role).toBe('Coordinator')
+  })
+
+  test('numbering goes on from the highest number, so a label is never handed out twice', async () => {
+    const s = run([spawn('a1', 1000), spawn('a2', 1000), spawn('a3', 1000)])
+    expect(s.agents.a3!.label).toBe('Researcher 3')
+    // As if the first two had been pruned: the next one still gets a fresh number.
+    const { a1: _a1, a2: _a2, ...rest } = s.agents
+    const pruned: Scene = { ...s, agents: rest, order: s.order.filter(id => id !== 'a1' && id !== 'a2') }
+    expect(reduce(pruned, spawn('a4', 2000)).agents.a4!.label).toBe('Researcher 4')
+    // A label that only starts with the same word is a different name.
+    const other = run([spawn('n1', 1000, { name: 'Researcher helper' }), spawn('a5', 1000)])
+    expect(other.agents.a5!.label).toBe('Researcher')
+  })
+})
+
+describe('coordinating', () => {
+  const back = (id: string, at: number, report = ''): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report, at })
+  const turnStarted: OfficeEvent = { kind: 'turnStarted', isContinuation: false, at: 500 }
+
+  test('a boss with nothing in hand is coordinating while its helpers are out', async () => {
+    const s = run([turnStarted, spawn('a1', 1000), spawn('a2', 1000, { type: 'Plan' })])
+    expect(waitingOn(s, MAIN).map(a => a.id)).toEqual(['a1', 'a2'])
+    expect(isCoordinating(s, s.agents[MAIN]!)).toBe(true)
+    // While it uses a tool of its own it is working, not waiting.
+    const busy = reduce(s, start(MAIN, 'Read', 'notes.md', 'r1', 2000))
+    expect(isCoordinating(busy, busy.agents[MAIN]!)).toBe(false)
+  })
+
+  test('a helper hired to work in the background does not hold its boss up', async () => {
+    const s = run([turnStarted, spawn('a1', 1000, { isBackground: true })])
+    expect(waitingOn(s, MAIN)).toEqual([])
+    expect(isCoordinating(s, s.agents[MAIN]!)).toBe(false)
+    expect(lastLine(s)).toBe('Main hired Researcher to work alongside it: find auth code')
+    const done = reduce(s, back('a1', 5000))
+    expect(done.ticker.map(line => line.text)).not.toContain('Main has every report back and is reviewing the results')
+  })
+
+  test('the boss hears back from everyone only when the last report is in', async () => {
+    const s = run([turnStarted, spawn('a1', 1000), spawn('a2', 1000, { type: 'Plan' })])
+    const one = reduce(s, back('a1', 5000, 'found it'))
+    expect(lastLine(one)).toBe('Researcher handed its report to Main and left: found it')
+    expect(isCoordinating(one, one.agents[MAIN]!)).toBe(true)
+    expect(waitingOn(one, MAIN).map(a => a.label)).toEqual(['Planner'])
+    const both = reduce(one, back('a2', 6000, 'here is the plan'))
+    expect(lastLine(both)).toBe('Main has every report back and is reviewing the results')
+    expect(isCoordinating(both, both.agents[MAIN]!)).toBe(false)
+  })
+
+  test('a boss waiting on a long job is never sent for coffee', async () => {
+    const s = run([turnStarted, spawn('a1', 1000), start('a1', 'Bash', 'npm test', 'b1', 2000)])
+    const later = reduce(s, { kind: 'tick', at: 2000 + 2 * IDLE_MS })
+    expect(later.agents[MAIN]!.station).not.toBe('breakroom')
+    expect(later.agents[MAIN]!.phase).toBe('working')
+    expect(isCoordinating(later, later.agents[MAIN]!)).toBe(true)
+  })
+
+  test('a helper that has gone quiet in the break room no longer holds its boss up', async () => {
+    const s = run([turnStarted, spawn('a1', 1000), start('a1', 'Read', 'a.ts', 'r1', 2000), end('a1', 'r1', 2100)])
+    const coffee = reduce(reduce(s, { kind: 'tick', at: 2100 + LINGER_MS }), { kind: 'tick', at: 2100 + IDLE_MS })
+    expect(coffee.agents.a1!.phase).toBe('idle')
+    expect(isCoordinating(coffee, coffee.agents[MAIN]!)).toBe(false)
+  })
+})
+
 describe('review focus', () => {
   test('a contractor becomes the named agent when its spawn lands late', async () => {
     const early = run([start('x9', 'Grep', 'login', 'c1', 1000)])
     expect(early.agents.x9!.type).toBe('contractor')
     expect(early.agents.x9!.label).toBe('Contractor')
     const named = reduce(early, spawn('x9', 1100, { type: 'Plan' }))
-    expect(named.agents.x9!.label).toBe('Plan')
+    expect(named.agents.x9!.label).toBe('Planner')
+    expect(named.agents.x9!.role).toBe('Planner')
     expect(named.agents.x9!.type).toBe('Plan')
     expect(named.agents.x9!.station).toBe('library')
     expect(named.agents.x9!.desk).toBe(early.agents.x9!.desk)
@@ -351,7 +476,7 @@ describe('review focus', () => {
   test('events for unknown agents leave the scene alone', async () => {
     const s = emptyScene()
     expect(reduce(s, end('nobody', 'c1', 1))).toBe(s)
-    expect(reduce(s, { kind: 'handedBack', agentId: 'nobody', reason: 'answer', at: 1 })).toBe(s)
-    expect(reduce(s, { kind: 'handedBack', agentId: MAIN, reason: 'answer', at: 1 })).toBe(s)
+    expect(reduce(s, { kind: 'handedBack', agentId: 'nobody', reason: 'answer', report: '', at: 1 })).toBe(s)
+    expect(reduce(s, { kind: 'handedBack', agentId: MAIN, reason: 'answer', report: '', at: 1 })).toBe(s)
   })
 })

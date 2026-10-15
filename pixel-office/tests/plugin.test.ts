@@ -82,7 +82,7 @@ const QUESTION = {
 
 const SPAWN = {
   tool_use_id: 'tu-spawn',
-  prompt: 'find auth code',
+  prompt: '## Task\nFind where the **login** flow creates a session.',
   description: 'find auth code',
   subagentType: 'Explore',
   provider: { plugin: 'engine', tier: 'core' } as never,
@@ -128,8 +128,9 @@ test('a spawned subagent opens the office and appears in the drawing', async ($,
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
   const svg = await ui.find({ type: 'Svg' })
   expect(String(svg?.props.source)).toContain('id="agent-agent-1"')
-  expect(await ui.find({ type: 'Text', text: /Main hired Explore: find auth code/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Explore · working · Meeting room/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Main hired Researcher and is waiting for its report: find auth code/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Main · coordinating · waiting on Researcher/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Researcher · working · being briefed/ })).toBeDefined()
 })
 
 test('a spawn returns before the pane opens', async ($, on) => {
@@ -169,9 +170,35 @@ test('a subagent works, hands back and leaves', async ($, on) => {
   await clock.advance(FLUSH)
   const value = scene()
   const lines = value?.ticker.map(line => line.text) ?? []
-  expect(lines).toContain('Explore searched files for login')
-  expect(lines).toContain('Explore handed its report to Main and left')
+  expect(lines).toEqual([
+    'Main hired Researcher and is waiting for its report: find auth code',
+    'Researcher is searching the files for login',
+    'Researcher handed its report to Main and left: found it',
+    'Main has every report back and is reviewing the results',
+  ])
   expect(value?.agents['agent-1']?.phase).toBe('gone')
+  expect(value?.agents['agent-1']?.report).toBe('found it')
+  expect(value?.agents['agent-1']?.brief).toBe('Task Find where the login flow creates a session.')
+})
+
+test('a helper hired in the background leaves its boss free', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn({ ...SPAWN, background: true })
+  await clock.advance(FLUSH)
+  expect(scene()?.agents['agent-1']?.isBackground).toBe(true)
+  expect(ticker(scene())).toEqual(['Main hired Researcher to work alongside it: find auth code'])
+})
+
+test('a command shows the description Claude gave it', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Read', tool_use_id: 'tu-r', file_path: '/work/a.ts' })
+  // The test world refuses Bash, so a command that runs is shown through PowerShell, which takes the same input.
+  await $.tool.call({ tool: 'PowerShell', tool_use_id: 'tu-p', command: 'npm test', description: 'Run the test suite' } as never)
+  await clock.advance(FLUSH)
+  expect(ticker(scene())).toContain('Main is running a command to run the test suite')
+  expect(scene()?.agents.main?.activity).toBeNull()
 })
 
 test('a permission prompt sends Main to reception', async ($, on) => {
@@ -191,7 +218,7 @@ test('a question is announced once, not again as a permission request', async ($
   await $.classic.PermissionRequest({ tool_name: 'AskUserQuestion', tool_input: {} })
   await clock.advance(FLUSH)
   const lines = ticker(scene())
-  expect(lines.filter(line => /waiting on you/.test(line))).toHaveLength(1)
+  expect(lines.filter(line => /waiting for you/.test(line))).toHaveLength(1)
   expect(lines.some(line => /permission/.test(line))).toBe(false)
 })
 
@@ -200,7 +227,7 @@ test('a permission request for any other tool still says so', async ($, on) => {
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } })
   await clock.advance(FLUSH)
-  expect(ticker(scene())).toContain('Main needs your permission to use Bash')
+  expect(ticker(scene())).toContain('Main needs your permission to run a command')
 })
 
 test('Main is idle between turns and works during them', async ($, on) => {
@@ -231,7 +258,8 @@ test('a stopped subagent is not reported as having handed in a report', async ($
   await $.agent.spawn(SPAWN)
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 'turn-1', agentId: 'agent-1', reason: 'aborted' })
   await clock.advance(FLUSH)
-  expect(ticker(scene())).toContain('Explore was stopped and left')
+  expect(ticker(scene())).toContain('Researcher was stopped and left')
+  expect(ticker(scene()).some(line => /handed its report/.test(line))).toBe(false)
 })
 
 test('a /clear empties the office and deselects', async ($, on) => {
@@ -358,12 +386,14 @@ test('pressing an agent in the org chart shows and hides its details', async ($,
   await $.agent.spawn(SPAWN)
   await clock.advance(FLUSH)
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
-  expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Job: find auth code$/ })).toBeUndefined()
   await ui.press({ key: 'agent-agent-1' })
-  expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Reports to: Main$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Researcher · Explore agent$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Job: find auth code$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Brief: Task Find where the login flow creates a session\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Reports to: Main, who waits for its report$/ })).toBeDefined()
   await ui.press({ key: 'agent-agent-1' })
-  expect(await ui.find({ type: 'Text', text: /^Task: find auth code$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Job: find auth code$/ })).toBeUndefined()
 })
 
 test('the time on the job of a selected agent keeps counting', async ($, on) => {
@@ -412,7 +442,8 @@ test('selecting Main never writes the job clock, as Main has no time on the job'
   await clock.advance(FLUSH)
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
   await ui.press({ key: 'agent-main' })
-  expect(await ui.find({ type: 'Text', text: /^Main \(your main agent\)$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Main · Coordinator$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Now: waiting on Researcher$/ })).toBeDefined()
   await clock.advance(3000)
   expect(clockWrites).toEqual([])
 })
@@ -470,5 +501,5 @@ test('the terminal gets a text office', async ($, on) => {
   world(on)
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
   expect(await ui.find({ type: 'Text', text: /desktop app/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Main: idle, Corner office/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Main: idle, ready for your next message/ })).toBeDefined()
 })

@@ -5,9 +5,12 @@ import type { OfficeEvent } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce } from './model'
 import { registerPane } from './pane'
 import { PANE, PANE_TITLE } from './state'
-import { WAITING_TOOLS, stationFor, targetOf, todoCounts } from './stations'
+import { WAITING_TOOLS, detailOf, gist, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
+// How much of a helper's brief and of its report the office keeps: enough to see what was asked and answered.
+export const BRIEF_MAX = 200
+export const REPORT_MAX = 200
 const SWEEP_EVERY = 15
 const CLOCK_EVERY = 3
 const QUEUE_MAX = 500
@@ -134,7 +137,7 @@ export const register: Register = (on, options) => {
       await quietly(async () => {
         const input = e as Record<string, unknown>
         const at = await $.clock.now()
-        push({ kind: 'toolStarted', agentId, tool, target: targetOf(tool, input), callId, at })
+        push({ kind: 'toolStarted', agentId, tool, target: targetOf(tool, input), detail: detailOf(tool, input), callId, at })
         const counts = stationFor(tool) === 'taskboard' ? todoCounts(input) : null
         if (counts !== null) push({ kind: 'todos', ...counts, at })
       })
@@ -159,8 +162,10 @@ export const register: Register = (on, options) => {
         parentId: e.parentAgentId ?? MAIN,
         type: e.subagentType,
         description: e.description,
+        brief: gist(e.prompt, BRIEF_MAX),
         name: e.name ?? null,
         isTeammate: e.isTeammate === true,
+        isBackground: e.background === true,
         at: await $.clock.now(),
       })
       if (autoOpen === 'on-first-subagent' && !office.isOpened) office.wantsOpen = true
@@ -177,7 +182,9 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     await quietly(async () => {
       const at = await $.clock.now()
-      if (e.agentId !== undefined) push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, at })
+      if (e.agentId !== undefined) {
+        push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, report: gist(e.answer, REPORT_MAX), at })
+      }
       else push({ kind: 'turnEnded', at })
     })
     return next(e)

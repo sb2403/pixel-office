@@ -327,6 +327,37 @@ older versions report that it failed to load.
 6. Terminal fallback, size guard.
 7. Marketplace file and user-scope install; manual verification.
 
+## 0.3.0: roles and collaboration
+
+The office animated collaboration but did not explain it. Names were engine type ids (`general-purpose 2`),
+a boss blocked on its helpers looked like it was thinking, and the two things that carry the collaboration,
+the brief a boss writes and the report a helper hands back, were dropped although the engine provides both.
+
+- **Roles.** `hooks/roles.ts` maps each agent type to a job title and a one-line blurb: Main is the
+  Coordinator, `Explore` the Researcher, `Plan` the Planner, `general-purpose` the Assistant, `fork` the Clone;
+  any other type is humanized (`code-reviewer` is "Code reviewer"). An engine-given name is kept as the label
+  (capitalized) and stays the address `SendMessage` matches on. Numbering continues from the highest number in
+  the scene, so pruning never hands a label out twice.
+- **Facts captured.** `spawned` gains `brief` (the first 200 characters of `agent.spawn`'s `prompt`) and
+  `isBackground` (its `background`); `handedBack` gains `report` (the first 200 characters of
+  `turn.complete`'s `answer`); `toolStarted` gains `detail` (the `description` Claude gives a command, else a
+  small table of what common commands are for, or a message's `summary`).
+- **Coordinating.** A boss's foreground helpers that are still out are the ones it waits on (`waitingOn`);
+  teammates never count, as their spawn is always background. A boss with no tool in hand, not waiting on the
+  person and not idle, with at least one, is *coordinating*: a status of its own in the panel, a bubble with the
+  meeting-room icon naming who it waits on, and the sweep never sends it to the break room. When the last
+  awaited report lands, the feed adds "<boss> has every report back and is reviewing the results".
+- **Hand-offs.** A walk can carry an item, handed over when the walk reaches the first agent it visits: a
+  folder on a hand-back, an envelope on a `SendMessage`. The SVG hides it with a `<set>` at that moment.
+- **Plain words.** One present-tense voice in the feed ("is reading", "is running a command to …"); permission
+  prompts say what they are for ("to run a command"); panel rows read name · status · what it is doing now; the
+  details box gives role, blurb, job, brief, now, how the boss works with it, report and time on the job.
+- **Name tags.** Longer, meaningful names collide where agents sit side by side (a boss briefing its new helper),
+  so a tag that would overlap a neighbour's moves under the feet, choosing the placement with less overlap.
+
+Still out of scope: changing what Claude does. The mod stays an observer that uses no model tokens; making Main
+delegate more is a job for prompts or agent definitions, not for this mod.
+
 ## Out of scope
 
 - Other sessions on the machine (a "building" view).
