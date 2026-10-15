@@ -91,6 +91,9 @@ describe('arrivals and briefings', () => {
   test('a job is boiled down to a few words that fit a name tag', async () => {
     expect(topicOf('Find the login code')).toBe('login code')
     expect(topicOf('Audit the very long and descriptive job title')).toBe('very long')
+    // Never cut mid-word: a pair that is too long gives way to its first word.
+    expect(topicOf('Check station mapping')).toBe('station')
+    expect(topicOf('Investigate internationalisation')).toBe('internation…')
     expect(topicOf('find')).toBe('find')
     expect(topicOf('')).toBe('')
   })
