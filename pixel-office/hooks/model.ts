@@ -1,12 +1,14 @@
-import type { Agent, Carry, OfficeEvent, Outcome, Point, Scene, StationId, Walk } from '../types'
+import type { Agent, Carry, OfficeEvent, Outcome, Point, Scene, StationId, Usage, Walk } from '../types'
 import { allBackLine, narrate } from './narrate'
 import { COORDINATOR, asName, roleFor } from './roles'
 import { lookFor } from './sprites'
 import {
+  EXCERPT,
   WAITING_TOOLS,
   WIDTH,
   clamp,
   doorOf,
+  fullText,
   pathLength,
   pointAlong,
   route,
@@ -17,6 +19,7 @@ import {
 export const MAIN = 'main'
 export const TICKER_MAX = 8
 export const GONE_KEEP = 50
+export const FULL_KEEP = 10
 export const LINGER_MS = 8_000
 export const IDLE_MS = 600_000
 export const BRIEFING_MAX_MS = 60_000
@@ -37,6 +40,7 @@ export function emptyScene(): Scene {
     brief: '',
     report: '',
     outcome: null,
+    usage: null,
     isTeammate: false,
     isBackground: false,
     phase: 'idle',
@@ -49,11 +53,41 @@ export function emptyScene(): Scene {
     lastErrorAt: null,
     lastEventAt: 0,
     arrivedAt: 0,
+    doneAt: null,
     goneAt: null,
     carry: null,
     look: lookFor('main', MAIN),
   }
-  return { agents: { [MAIN]: main }, order: [MAIN], ticker: [], todos: null, briefing: null }
+  return { agents: { [MAIN]: main }, order: [MAIN], ticker: [], todos: null, briefing: null, job: null }
+}
+
+// Fields added to an agent since the first release, with what an agent saved without them stands for. Session
+// state outlives a hot reload of the mod, so a scene saved by an older version can meet this code.
+const AGENT_DEFAULTS = (agent: Agent): Partial<Agent> => ({
+  role: roleFor(agent.type).title,
+  name: null,
+  brief: '',
+  report: '',
+  outcome: null,
+  // Nothing says its boss waits on it, so it never makes its boss look busy.
+  isBackground: true,
+  carry: null,
+  usage: null,
+  doneAt: null,
+})
+const AGENT_KEYS = Object.keys(AGENT_DEFAULTS({ type: MAIN } as Agent)) as (keyof Agent)[]
+
+// The scene as this version reads it. The same object comes back when nothing is missing, so a scene that is
+// already whole is never rewritten (a write would redraw the pane).
+export function restore(scene: Scene): Scene {
+  const isWhole = (agent: Agent): boolean => AGENT_KEYS.every(key => key in agent)
+  const hasJob = 'job' in scene
+  if (hasJob && Object.values(scene.agents).every(isWhole)) return scene
+  const agents: Record<string, Agent> = {}
+  for (const [id, agent] of Object.entries(scene.agents)) {
+    agents[id] = isWhole(agent) ? agent : ({ ...AGENT_DEFAULTS(agent), ...agent } as Agent)
+  }
+  return { ...scene, agents, job: hasJob ? scene.job : null }
 }
 
 export function isWalkingAt(agent: Agent, at: number): boolean {
@@ -73,10 +107,16 @@ const put = (scene: Scene, agent: Agent): Scene => ({ ...scene, agents: { ...sce
 
 const addAgent = (scene: Scene, agent: Agent): Scene => ({ ...put(scene, agent), order: [...scene.order, agent.id] })
 
-function withLine(scene: Scene, at: number, text: string | null): Scene {
+// A routine line replaces the same agent's last routine line, so a few busy helpers cannot push the story
+// (who hired whom, who reported back, who needs you) out of the feed within seconds.
+function withLine(scene: Scene, at: number, text: string | null, routineOf: string | null = null): Scene {
   if (text === null) return scene
-  return { ...scene, ticker: [...scene.ticker, { at, text }].slice(-TICKER_MAX) }
+  const kept = routineOf === null ? scene.ticker : scene.ticker.filter(line => line.routineOf !== routineOf)
+  return { ...scene, ticker: [...kept, { at, text, routineOf }].slice(-TICKER_MAX) }
 }
+
+// Tool calls that are part of the story rather than routine work: a message to another agent, and a wait on you.
+const isMilestone = (tool: string): boolean => tool === 'SendMessage' || WAITING_TOOLS.has(tool)
 
 function freeSlot(scene: Scene, station: StationId, selfId: string): number {
   const taken = new Set(
@@ -185,6 +225,7 @@ function arrive(scene: Scene, id: string, type: string, label: string, at: numbe
     brief: '',
     report: '',
     outcome: null,
+    usage: null,
     isTeammate: false,
     isBackground: true,
     phase: 'arriving',
@@ -197,6 +238,7 @@ function arrive(scene: Scene, id: string, type: string, label: string, at: numbe
     lastErrorAt: null,
     lastEventAt: at,
     arrivedAt: at,
+    doneAt: null,
     goneAt: null,
     carry: null,
     look: lookFor(type, id),
@@ -235,6 +277,39 @@ function endBriefing(scene: Scene, agent: Agent, at: number): Scene {
   return out
 }
 
+// The agent walks to the meeting room to be briefed, its boss joins it there unless busy, and the whiteboard
+// shows the job.
+function brief(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
+  let s = put(scene, { ...moveTo(scene, agent, 'meeting', ev.at), phase: 'briefing' })
+  const parent = s.agents[ev.parentId]
+  if (parent !== undefined && parent.activity === null && parent.phase !== 'gone') {
+    s = put(s, { ...moveTo(s, parent, 'meeting', ev.at), phase: 'working', lastEventAt: ev.at })
+  }
+  return { ...s, briefing: ev.description }
+}
+
+// A called-back agent comes back by the elevator if it had left, starts a new stint and is briefed again. The
+// message it is called back with is its new brief; with none, the old brief still stands.
+function callBack(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
+  const isBack = agent.phase === 'gone'
+  const returning: Agent = {
+    ...agent,
+    ...(isBack ? { station: 'elevator' as const, slot: 0, pos: slotPoint('elevator', 0), walk: null, desk: nextDesk(scene) } : {}),
+    parentId: ev.parentId,
+    description: ev.description,
+    brief: ev.brief === '' ? agent.brief : ev.brief,
+    isBackground: ev.isBackground,
+    outcome: null,
+    doneAt: null,
+    goneAt: null,
+    carry: null,
+    activity: null,
+    arrivedAt: ev.at,
+    lastEventAt: ev.at,
+  }
+  return brief(scene, returning, ev)
+}
+
 function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   const existing = scene.agents[ev.id]
   let s = scene
@@ -248,12 +323,9 @@ function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   }
   if (existing === undefined) {
     const fresh = { ...arrive(s, ev.id, ev.type, labelFor(s, ev.type, ev.name), ev.at), ...hire }
-    s = addAgent(s, { ...moveTo(s, fresh, 'meeting', ev.at), phase: 'briefing' })
-    const parent = s.agents[ev.parentId]
-    if (parent !== undefined && parent.activity === null && parent.phase !== 'gone') {
-      s = put(s, { ...moveTo(s, parent, 'meeting', ev.at), phase: 'working', lastEventAt: ev.at })
-    }
-    s = { ...s, briefing: ev.description }
+    s = brief(addAgent(s, fresh), fresh, ev)
+  } else if (ev.isResume) {
+    s = callBack(s, existing, ev)
   } else {
     const label = existing.type === 'contractor' ? labelFor(s, ev.type, ev.name) : existing.label
     s = put(s, {
@@ -295,6 +367,7 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
       pos: slotPoint('elevator', 0),
       walk: null,
       goneAt: null,
+      doneAt: null,
       outcome: null,
       carry: null,
       desk: nextDesk(s),
@@ -319,7 +392,7 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
     lastEventAt: ev.at,
   })
   if (wasBriefing) s = endBriefing(s, agent, ev.at)
-  return withLine(s, ev.at, narrate(s, ev))
+  return withLine(s, ev.at, narrate(s, ev), isMilestone(ev.tool) ? null : agent.id)
 }
 
 function toolEnded(scene: Scene, ev: Ev<'toolEnded'>): Scene {
@@ -353,19 +426,32 @@ function waiting(scene: Scene, ev: Ev<'waiting'>): Scene {
   return withLine(s, ev.at, narrate(s, { ...ev, agentId: id }))
 }
 
+// A message from you starts a new job; a turn that carries on without one reopens the job it belongs to.
 function turnStarted(scene: Scene, ev: Ev<'turnStarted'>): Scene {
   const main = scene.agents[MAIN]
   if (main === undefined) return scene
-  const s = put(scene, { ...moveTo(scene, main, 'office', ev.at), phase: 'working', lastEventAt: ev.at })
+  const job =
+    ev.isContinuation && scene.job !== null
+      ? { ...scene.job, endedAt: null }
+      : { startedAt: ev.at, endedAt: null, task: ev.task, mainUsage: null }
+  const s = put({ ...scene, job }, { ...moveTo(scene, main, 'office', ev.at), phase: 'working', lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }
 
 // Main's turn is over: it rests where it stands until the next message. No walk; the sweep takes it
 // home after a short while and to the break room after a long one.
+// A teammate or a called-back helper works more than one turn, and Main works one per message: their costs add up.
+export function addUsage(sum: Usage | null, more: Usage | null): Usage | null {
+  if (more === null) return sum
+  if (sum === null) return more
+  return { tokens: sum.tokens + more.tokens, reused: sum.reused + more.reused, model: more.model }
+}
+
 function turnEnded(scene: Scene, ev: Ev<'turnEnded'>): Scene {
   const main = scene.agents[MAIN]
   if (main === undefined) return scene
-  const s = put(scene, { ...main, phase: 'idle', activity: null, lastEventAt: ev.at })
+  const job = scene.job === null ? null : { ...scene.job, endedAt: ev.at, mainUsage: addUsage(scene.job.mainUsage, ev.usage) }
+  const s = put({ ...scene, job }, { ...main, phase: 'idle', activity: null, usage: addUsage(main.usage, ev.usage), lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }
 
@@ -376,6 +462,21 @@ function prune(scene: Scene): Scene {
   const agents = { ...scene.agents }
   for (const id of drop) delete agents[id]
   return { ...scene, agents, order: scene.order.filter(id => !drop.has(id)) }
+}
+
+// Only the most recently finished helpers keep their whole brief and report; older ones keep as much as the
+// one-line excerpt shows. That bounds the scene, which is written to state on every change.
+function trimTexts(scene: Scene): Scene {
+  const isLong = (a: Agent): boolean => a.brief.length > EXCERPT || a.report.length > EXCERPT
+  const old = Object.values(scene.agents)
+    .filter(a => a.phase === 'gone')
+    .sort((a, b) => (b.goneAt ?? 0) - (a.goneAt ?? 0))
+    .slice(FULL_KEEP)
+    .filter(isLong)
+  if (old.length === 0) return scene
+  const agents = { ...scene.agents }
+  for (const a of old) agents[a.id] = { ...a, brief: fullText(a.brief, EXCERPT), report: fullText(a.report, EXCERPT) }
+  return { ...scene, agents }
 }
 
 const OUTCOMES: Readonly<Record<Ev<'handedBack'>['reason'], Outcome>> = {
@@ -403,9 +504,17 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
     next = { ...moved, phase: 'gone', goneAt: ev.at + (moved.walk?.durationMs ?? 0) }
   }
   const awaitedBy = isParentHere && waitingOn(scene, parent.id).some(a => a.id === agent.id) ? parent : undefined
-  let s = put(scene, { ...next, activity: null, report: ev.report, outcome, lastEventAt: ev.at })
+  let s = put(scene, {
+    ...next,
+    activity: null,
+    report: ev.report,
+    outcome,
+    usage: addUsage(agent.usage, ev.usage),
+    doneAt: ev.at,
+    lastEventAt: ev.at,
+  })
   if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at)
-  s = prune(s)
+  s = trimTexts(prune(s))
   s = withLine(s, ev.at, narrate(s, ev))
   if (awaitedBy !== undefined && waitingOn(s, awaitedBy.id).length === 0) s = withLine(s, ev.at, allBackLine(awaitedBy.label))
   return s
@@ -414,7 +523,8 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
 // A boss waiting on its helpers is at work however long they take, so the sweep may walk it home but never
 // sends it to the break room.
 function sweepTarget(agent: Agent, now: number, isWaitingOnTeam: boolean): StationId | null {
-  if (agent.activity !== null || agent.phase === 'gone') return null
+  // An agent waiting on you stays at reception until you answer, however long that takes.
+  if (agent.activity !== null || agent.phase === 'gone' || agent.phase === 'waiting') return null
   const quiet = now - agent.lastEventAt
   // A briefing normally ends with the agent's first tool; one that never comes must not hold the room forever.
   if (agent.phase === 'briefing') return quiet >= BRIEFING_MAX_MS ? homeOf(agent) : null

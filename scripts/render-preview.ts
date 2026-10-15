@@ -12,11 +12,13 @@
 //   docs/images/office.svg        the animated office, exactly as the mod draws it
 //   docs/images/office-map.svg    the same office with a label on every zone
 //   docs/images/pane-preview.svg  the whole pane: office, feed, org chart, details box, legend button
+//   docs/images/job-recap.svg     the recap of the same job once it has finished, as "Show this job" draws it
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { MAIN, emptyScene, isCoordinating, isWalkingAt, reduce, waitingOn } from '../pixel-office/hooks/model'
+import { recapOf, recapRows, recapSummary, recapSvg } from '../pixel-office/hooks/recap'
 import { STATUS_WORDS, agentDetails, clockLabel, escapeXml, objectiveLine, orgRows, renderOffice } from '../pixel-office/hooks/render'
 import { HEIGHT, STATIONS, STATION_ORDER, WIDTH, clip, slotPoint } from '../pixel-office/hooks/stations'
 import type { OfficeEvent, Scene, StationId } from '../pixel-office/types'
@@ -43,6 +45,7 @@ const spawn = (id: string, type: string, description: string, brief: string, sec
   name: null,
   isTeammate: false,
   isBackground: false,
+  isResume: false,
   at: at(seconds),
 })
 const begin = (agentId: string, tool: string, target: string, callId: string, seconds: number, detail = ''): OfficeEvent => ({
@@ -65,7 +68,7 @@ const finish = (agentId: string, callId: string, seconds: number): OfficeEvent =
 const REPORT = 'Sessions are created in startSession() in auth.ts and read back in middleware.ts. The token is never refreshed.'
 
 const STORY: OfficeEvent[] = [
-  { kind: 'turnStarted', isContinuation: false, at: at(0) },
+  { kind: 'turnStarted', isContinuation: false, task: '', at: at(0) },
   // Main plans the work on the task board, then the sweep sends it back to the corner office.
   begin(MAIN, 'TodoWrite', '', 'todo-1', 3),
   { kind: 'todos', done: 2, open: 3, at: at(3) },
@@ -88,7 +91,14 @@ const STORY: OfficeEvent[] = [
   // walks to the meeting room to brief it, and now it too is coordinating.
   spawn(DIGGER, 'Explore', 'find why a test fails', 'Find out why the token refresh test fails.', 104, TESTER),
   // The Researcher hands its report in: it walks to Main with a folder, then on to the elevator.
-  { kind: 'handedBack', agentId: EXPLORE, reason: 'answer', report: REPORT, at: at(118) },
+  {
+    kind: 'handedBack',
+    agentId: EXPLORE,
+    reason: 'answer',
+    report: REPORT,
+    usage: { tokens: 41_200, reused: 33_900, model: 'claude-haiku-5-5' },
+    at: at(118),
+  },
 ]
 
 // A moment 0.6 seconds after the Researcher set off with its report, while that walk is still under way.
@@ -126,6 +136,39 @@ function checkScene(s: Scene): void {
 }
 
 checkScene(scene)
+
+// The rest of the job, for the recap: every helper reports, and Main writes up the fix.
+const used = (tokens: number, reused: number, model: string) => ({ tokens, reused, model })
+const backAt = (agentId: string, report: string, usage: ReturnType<typeof used>, seconds: number): OfficeEvent => ({
+  kind: 'handedBack',
+  agentId,
+  reason: 'answer',
+  report,
+  usage,
+  at: at(seconds),
+})
+const FINISH: OfficeEvent[] = [
+  finish(PLAN, 'read-2', 125),
+  backAt(PLAN, 'Refresh the token in startSession() before it expires; add a test for the refresh.', used(23_800, 18_100, 'claude-sonnet-5-5'), 140),
+  begin(DIGGER, 'Read', 'refresh.test.ts', 'read-3', 150),
+  finish(DIGGER, 'read-3', 170),
+  backAt(DIGGER, 'The refresh test expects a new token, but the stub never issues one.', used(17_400, 13_200, 'claude-haiku-5-5'), 175),
+  begin(TESTER, 'Edit', 'auth.ts', 'edit-1', 180),
+  finish(TESTER, 'edit-1', 200),
+  begin(TESTER, 'Bash', 'npm test', 'bash-2', 205, 'Run the test suite'),
+  finish(TESTER, 'bash-2', 235),
+  backAt(TESTER, 'Fixed the stub and the refresh; all 214 tests pass.', used(66_300, 51_900, 'claude-sonnet-5-5'), 240),
+  begin(MAIN, 'Write', 'notes.md', 'write-1', 248),
+  finish(MAIN, 'write-1', 256),
+  { kind: 'turnEnded', usage: used(58_600, 47_300, 'claude-opus-5-5'), at: at(262) },
+]
+const DONE_AT = at(262)
+const finished: Scene = FINISH.reduce(reduce, scene)
+const recap = recapOf(finished, DONE_AT)
+if (recap === null) throw new Error('The demo job has no recap')
+expect(!recap.isOpen && recap.helpers === 4 && recap.peak === 4, 'the recap shows four helpers, all four at work at once')
+expect(recap.lanes.map(l => l.depth).join() === '0,1,1,1,2', 'the recap nests Researcher 2 under the Assistant')
+expect(recapSummary(recap).some(line => line.includes('faster than one after another')), 'the recap says what working in parallel bought')
 
 // ---------------------------------------------------------------------------------------------------
 // Checks that a generated file is well-formed XML: tags balance, attributes are quoted, no stray `&` or
@@ -355,19 +398,56 @@ function panePreview(s: Scene, now: number, selectedId: string): string {
   out += '</g>'
   out += badge(4, RIGHT_X + 2, boxY + 2)
 
-  // The legend button
+  // The legend button, and the button that opens the recap of this job
   const buttonY = boxY + boxH + 24
   out += `<rect x="${PAD}" y="${buttonY}" width="124" height="30" rx="6" fill="#ffffff" stroke="#bdb8aa"/>`
   out += `<g font-family="${SANS}">${txt(PAD + 62, buttonY + 20, 'Show legend', ` font-size="13" text-anchor="middle" fill="${INK}"`)}</g>`
   out += badge(5, PAD + 140, buttonY + 15)
+  const jobX = PAD + 170
+  out += `<rect x="${jobX}" y="${buttonY}" width="134" height="30" rx="6" fill="#ffffff" stroke="#bdb8aa"/>`
+  out += `<g font-family="${SANS}">${txt(jobX + 67, buttonY + 20, 'Show this job', ` font-size="13" text-anchor="middle" fill="${INK}"`)}</g>`
+  out += badge(6, jobX + 150, buttonY + 15)
 
   const height = Math.max(buttonY + 30, y) + PAD + 8
-  const caption = "The Pixel Office pane: the animated office, a feed of what just happened, who's doing what with a details box, and a legend button."
+  const caption = "The Pixel Office pane: the animated office, a feed of what just happened, who's doing what with a details box, a legend button and a button for the recap of this job."
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}">` +
     `<title>The Pixel Office pane</title><desc>${escapeXml(caption)}</desc>` +
     `<rect x="0.5" y="0.5" width="${W - 1}" height="${height - 1}" rx="12" fill="#faf9f5" stroke="${LINE}"/>` +
     `${out}</svg>`
+  )
+}
+
+// ---------------------------------------------------------------------------------------------------
+// job-recap.svg: the summary lines and the per-agent rows around the swimlane, as the pane shows them.
+// ---------------------------------------------------------------------------------------------------
+
+function jobPicture(): string {
+  if (recap === null) throw new Error('The demo job has no recap')
+  const chart = recapSvg(recap)
+  const width = Number(/viewBox="0 0 (\d+) /.exec(chart)?.[1] ?? 640)
+  const chartH = Number(/viewBox="0 0 \d+ (\d+)"/.exec(chart)?.[1] ?? 200)
+  const summary = recapSummary(recap)
+  const rows = recapRows(recap)
+  const top = 18 + summary.length * 20
+  let out = `<g font-family="${SANS}">`
+  summary.forEach((line, i) => {
+    out += txt(PAD, 24 + i * 20, line, i === 0 ? ` font-size="14" font-weight="bold" fill="${INK}"` : ` font-size="13" fill="${INK}"`)
+  })
+  out += '</g>'
+  out += chart.replace(/^<svg /, `<svg x="${PAD}" y="${top}" `)
+  const rowsY = top + chartH + 22
+  out += `<g font-family="${MONO}" font-size="12">`
+  rows.forEach((line, i) => {
+    out += `<text x="${PAD}" y="${rowsY + i * 18}" fill="${DIM}" xml:space="preserve">${escapeXml(line)}</text>`
+  })
+  out += '</g>'
+  const w = width + PAD * 2
+  const h = rowsY + rows.length * 18 + PAD
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
+    `<title>Recap of a finished job</title><desc>${escapeXml(`${summary.join('. ')}. ${rows.map(r => r.trim()).join('. ')}.`)}</desc>` +
+    `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="12" fill="#faf9f5" stroke="${LINE}"/>${out}</svg>`
   )
 }
 
@@ -383,6 +463,7 @@ const FILES: Record<string, string> = {
   'office.svg': renderOffice(scene, NOW),
   'office-map.svg': officeMap(NOW),
   'pane-preview.svg': panePreview(scene, NOW, EXPLORE),
+  'job-recap.svg': jobPicture(),
 }
 
 for (const [name, svg] of Object.entries(FILES)) {

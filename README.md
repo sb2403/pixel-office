@@ -64,15 +64,28 @@ Two signs worth knowing. A red puff above a character means a tool call just hit
 
 ## Reading the panel
 
-<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Researcher 2, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report and how long it was on the job. A Show legend button sits at the bottom." width="100%">
+<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Researcher 2, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report, its tokens and how long it was on the job. A Show legend button and a Show this job button sit at the bottom." width="100%">
 
 The numbers below match the numbers in the picture.
 
 1. **The office.** The animated picture. Every character has a name tag, and the speech bubble shows what it is doing right now.
-2. **What's happening.** A plain-English feed of the latest events, each with the time it happened. The newest line is at the bottom, and only the last eight are kept.
+2. **What's happening.** A plain-English feed with the time of each line, newest at the bottom, eight lines long. It keeps the story: who hired whom, who messaged whom, who reported back, who needs you and what went wrong. Routine work (reading, editing, running a command) gets one line per agent, its latest, so a few busy helpers cannot push the story out of view.
 3. **Who's doing what.** The team, as an org chart: indentation shows who reports to whom. Each row reads name, status, and what it is doing right now in words ("reading session.ts", "waiting on Planner and Assistant"). Green is working, teal is coordinating (waiting on helpers), yellow is "needs you" (waiting on your answer or permission), grey is idle or done. The dim line with an arrow under a helper is its objective, the job it was hired to do. A long chart ends with a "+N more" line.
-4. **Details.** Click a name to open its details: its role and what that kind of agent does, its job, the start of the brief its boss wrote, what it is doing now, who it reports to and whether that boss is waiting on it, the start of its report once it has handed one in, and an "On the job" timer that counts up while it works. Click the name again to close the box.
+4. **Details.** Click a name to open its details: its role and what that kind of agent does, its job, the start of the brief its boss wrote, what it is doing now, who it reports to and whether that boss is waiting on it, the start of its report once it has handed one in, what its work cost once it has (tokens, and the model it ran on), and an "On the job" timer that counts up while it works. A brief or report too long for one line has a "Read the full brief" (or report) link under it that opens the whole text, formatted. Click the name again to close the box.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
+6. **Show this job.** A button that opens the recap of the job in front of you: see below.
+
+## The recap of a job
+
+A job is everything from a message you send until the next one. Once you have sent one, a **Show this job** button sits beside the legend button. It opens a recap that answers the question delegation raises: did splitting the work up help?
+
+<img src="docs/images/job-recap.svg" alt="The recap of a finished job. This job: fix the login bug. Took 4 minutes 22 seconds, 4 helpers, up to 4 at once, 207 thousand tokens. Helpers did 8 minutes 28 seconds of work in 3 minutes 40 seconds: about 2.3 times faster than one after another. A timeline shows one bar per agent: Main across the whole job; the Researcher, Planner and Assistant starting together; Researcher 2, hired by the Assistant, starting later. Each helper's bar ends with a tick and how long it took. Under it, one line per agent gives its time, tokens and how its job ended." width="100%">
+
+- **The summary** says how long the job took, how many helpers it used and how many were at work at once, and what it cost in tokens. With two or more helpers whose work overlapped, it adds the time their work would have taken one after another, compared with the time it took together.
+- **The timeline** has one bar per agent, indented by who hired whom, from when it started to when it handed in its report. Orange is Main, blue a helper Main waited for, green a helper working alongside. A tick, a square or a cross at the end says whether it handed in its report, was stopped, or ran into a problem. The colours were checked to stay apart for colour-blind readers, and the picture has a dark version for a dark screen.
+- **One line per agent** under the timeline gives the same facts in words.
+
+The recap only shows the job in front of you. To keep a short record of each job across sessions, set the `history` option to `last-20` (see Commands and options): the recap then lists your earlier jobs too. It is off unless you switch it on.
 
 In a terminal session the pane shows the same feed and team as plain text, under a line telling you to open the session in the Claude desktop app to see the picture.
 
@@ -106,7 +119,7 @@ The same two steps also work inside a terminal Claude Code session, as `/plugin 
 
 The Claude desktop app's built-in plugin browser won't find this mod; use Option 1 or Option 2 above. Once installed, it loads in desktop sessions too.
 
-Nothing asks you anything: the install goes ahead at user scope, which is the default, and then prints a note that one option is not set yet. That is fine. `autoOpen`, the option for when the office opens by itself, stays at its default of `on-first-subagent`. To pick another value, add `--config autoOpen=session-start` (or `never`) to the install line, or set it later with `/plugin configure pixel-office@pixel-office` or the `--values-stdin` form under Commands and options below. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
+Nothing asks you anything: the install goes ahead at user scope, which is the default, and then prints a note that options are not set yet. That is fine: each stays at its default. `autoOpen`, the option for when the office opens by itself, stays at `on-first-subagent`, and `history` stays `off`. To pick another value, add `--config autoOpen=session-start` (or `never`) to the install line, or set it later with `/plugin configure pixel-office@pixel-office` or the `--values-stdin` form under Commands and options below. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
 
 **Fallback.** If those commands do not work, download the repository from GitHub (Code → Download ZIP, then unzip it) or run `git clone https://github.com/sb2403/pixel-office`. Then run these two commands in a terminal, with the path set to the unzipped or cloned folder:
 
@@ -121,11 +134,21 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 
 **`/office`** shows or hides the office pane. Type it in any session, whatever `autoOpen` is set to. Its one-line reply is the only thing the mod ever adds to your conversation.
 
-**`autoOpen`** is the one option. It decides when the office opens by itself:
+**`autoOpen`** decides when the office opens by itself:
 
 - `on-first-subagent` (default): the first time a subagent is hired.
 - `session-start`: as soon as a session starts.
 - `never`: only when you run `/office`.
+
+**`history`** decides whether the office keeps a record of your jobs across sessions:
+
+- `off` (default): nothing is kept once the session ends.
+- `last-20`: the newest 20 jobs are kept on this computer, in the mod's own store: the start of the message that began each one (up to 120 characters), when it started, how long it took, how many helpers and how many at once, and its tokens. The recap lists them under "Earlier jobs".
+
+**`notify`** decides whether the office reminds you when an agent is waiting on you:
+
+- `off` (default): no reminders.
+- `after-30s`: once an agent has waited 30 seconds for your answer, permission or plan approval, the office says so once, naming the agent ("Researcher is waiting for your permission"). It shows a toast over the conversation, and raises a notification through your notification setting. In a terminal that is a desktop notification or a bell, as your terminal does them; the Claude desktop app shows the toast, and only your own notification hooks run there. Claude Code may already notify you when it needs you; if the two double up, leave this off.
 
 Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
 
@@ -149,7 +172,11 @@ Either way the new value applies to sessions you start afterwards. `claude plugi
 
 **Main says "coordinating"?** It hired helpers and is waiting for their reports, with nothing else in hand. Its bubble and its row name who it is waiting on. However long they take, a coordinating boss is never sent to the break room. Any helper that hires its own helpers coordinates the same way.
 
+**A helper that left comes back?** Its boss called it back for more work, with everything it knew the first time. It steps out of the elevator again (a teammate walks over from the break room), is briefed in the meeting room, and the feed says "Main called Researcher back". It keeps its name, and its last report stays in its details box until it hands in a new one.
+
 **Someone is carrying a folder or an envelope?** A folder is a report on its way to the boss who asked for it; an envelope is a message on its way to another agent. Each disappears at the moment it is handed over.
+
+**What do "38k tokens (31k reused)" mean?** Tokens are the pieces of text a model reads and writes; they are what an agent's work costs. Every helper starts by reading its brief and whatever it looks up, so hiring helpers buys parallel work with tokens. "Reused" tokens were served from the prompt cache, text the model had read moments before, and cost far less than fresh ones. The count is summed over all of an agent's turns. The office shows tokens, not money, because prices change.
 
 **A name tag is under someone's feet?** Two characters stand so close that their name tags would cover each other, as when a boss sits beside the helper it is briefing. One tag moves below the feet so both stay readable.
 
@@ -185,7 +212,7 @@ Raise `version` in `pixel-office/.claude-plugin/plugin.json`, commit, and push. 
 - It is built on an early-access mod API that may change between Claude Code releases, so a new release can need a new version of this mod.
 - An organization policy can disable mods. If yours does, the office will not load.
 - Cost: it uses no model tokens. The only thing that enters your conversation is the one-line reply to `/office`.
-- Privacy: it reads tool names, file names, commands and the descriptions Claude gives them, search patterns, web hosts, message summaries, the task descriptions helpers are given, and the first 200 characters of each helper's brief and of its report, inside your own Claude Code, only to draw the office. It keeps them in the session's own state and sends nothing anywhere.
+- Privacy: it reads tool names, file names, commands and the descriptions Claude gives them, search patterns, web hosts, message summaries, the task descriptions helpers are given, each helper's brief and report (up to 2,000 characters each for the ten most recently finished helpers, 200 for older ones), and the start of each message you send (up to 120 characters, to name the job), inside your own Claude Code, only to draw the office. It keeps them in the session's own state and sends nothing anywhere. With `history` set to `last-20` it also keeps a short record of each job on this computer across sessions, as described under Commands and options; it is off unless you switch it on.
 
 ## Develop
 
@@ -198,5 +225,9 @@ claude plugin validate --strict pixel-office
 ```
 
 `plugin test` needs Claude Code 2.1.295 or newer. `validate .` checks the marketplace file. `validate --strict` checks the mod and treats warnings as errors; it passes on this tree.
+
+GitHub runs the same three commands on every pull request and push, on Claude Code 2.1.295 (the oldest version this README promises) and on the newest release, and again every Monday so a Claude Code release that breaks the mod shows up before anyone reports it. It also draws the README pictures again and fails if they no longer match the drawing code: after changing what the office draws, run `npx -y tsx@4.19.2 scripts/render-preview.ts` and commit `docs/images`.
+
+Type-checking stays a local step, because the API declarations it needs are only written out by a running Claude Code session. Load the `plugin-authoring` skill in a session, take the `claude-code.d.ts` path it names, and point a `tsconfig` at it with `pixel-office/hooks`, `pixel-office/types` and `pixel-office/tests` included; the spec's plan has the full file. `tsconfig.typecheck.json` is ignored by git for that reason.
 
 Licensed under the MIT License.

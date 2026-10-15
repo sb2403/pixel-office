@@ -2,10 +2,10 @@ import type { Agent, Scene, StationId } from '../types'
 import { MAIN, isCoordinating, isWalkingAt, positionAt, waitingOn } from './model'
 import { doing } from './narrate'
 import { OFFICE_DEFS, officeBase, officeDecor, rect } from './office'
-import { roleFor } from './roles'
+import { modelName, roleFor, tokenCount } from './roles'
 import { iconSvg, itemSvg, personSvg } from './sprites'
 import type { Variant } from './sprites'
-import { HEIGHT, STATIONS, WAITING_TOOLS, WIDTH, clamp, clip, splitAt, stripControls } from './stations'
+import { EXCERPT, HEIGHT, STATIONS, WAITING_TOOLS, WIDTH, clamp, clip, gist, splitAt, stripControls } from './stations'
 
 export const SVG_BUDGET = 120_000
 export const PUFF_MS = 2500
@@ -144,8 +144,13 @@ export function altText(scene: Scene): string {
   return `Pixel office with ${here.length} ${noun}: ${here.map(a => `${a.label} at ${STATIONS[a.station].name}`).join(', ')}`
 }
 
+// The details box shows a brief or a report as one line; the whole text is a press away.
+export const excerptOf = (text: string): string => gist(text, EXCERPT)
+// Whether the one line leaves something out, so the whole text is worth offering.
+export const isCut = (text: string): boolean => excerptOf(text).endsWith('…')
+
 // Lines that only belong in the panel: the brief and the report are long, and the job clock ticks every second.
-const PANEL_ONLY = ['Brief:', 'Report:', 'On the job:']
+const PANEL_ONLY = ['Brief:', 'Report:', 'On the job:', 'Used']
 
 // The details box: who this is, what its kind of agent does, the job it was given, what it is doing, who it
 // works for and how that boss works with it, and what it handed back.
@@ -154,7 +159,11 @@ export function agentDetails(scene: Scene, id: string, now: number): string[] {
   if (agent === undefined) return []
   const role = roleFor(agent.type)
   const boss = agent.parentId === null ? undefined : scene.agents[agent.parentId]?.label
-  if (agent.id === MAIN) return [`Main · ${role.title}`, role.blurb, `Now: ${nowOf(scene, agent)}`]
+  const used =
+    agent.usage === null
+      ? []
+      : [`${agent.id === MAIN ? 'Used so far' : 'Used'}: ${tokenCount(agent.usage.tokens)} tokens (${tokenCount(agent.usage.reused)} reused) on ${modelName(agent.usage.model)}`]
+  if (agent.id === MAIN) return [`Main · ${role.title}`, role.blurb, `Now: ${nowOf(scene, agent)}`, ...used]
   // "Researcher 2 · Explore agent" ties the office's name to the one Claude Code shows; a named agent also gets its role.
   const isRoleName = agent.label === role.title || agent.label.startsWith(`${role.title} `)
   const title =
@@ -165,13 +174,14 @@ export function agentDetails(scene: Scene, id: string, now: number): string[] {
         : `${agent.label} · ${role.title} (${agent.type} agent)`
   const lines = [title, role.blurb]
   if (agent.description !== '') lines.push(`Job: ${agent.description}`)
-  if (agent.brief !== '') lines.push(`Brief: ${agent.brief}`)
+  if (agent.brief !== '') lines.push(`Brief: ${excerptOf(agent.brief)}`)
   lines.push(`Now: ${nowOf(scene, agent)}`)
   if (boss !== undefined) {
     const how = agent.isTeammate ? 'leads the team' : agent.isBackground ? 'keeps working meanwhile' : 'waits for its report'
     lines.push(`Reports to: ${boss}, who ${how}`)
   }
-  if (agent.report !== '') lines.push(`Report: ${agent.report}`)
+  if (agent.report !== '') lines.push(`Report: ${excerptOf(agent.report)}`)
+  lines.push(...used)
   if (agent.id !== MAIN) {
     // A helper that has left stops the clock where it left.
     const until = agent.phase === 'gone' && agent.goneAt !== null ? Math.min(now, agent.goneAt) : now

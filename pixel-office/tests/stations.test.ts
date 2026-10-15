@@ -10,6 +10,7 @@ import {
   detailOf,
   doorOf,
   explainCommand,
+  fullText,
   gist,
   pathLength,
   pointAlong,
@@ -122,6 +123,13 @@ describe('plain-English details', () => {
 
   test('other tools have no detail', async () => {
     expect(detailOf('Read', { file_path: '/a/b.ts', description: 'not used' })).toBe('')
+  })
+
+  test('a text kept in full keeps its lines and loses only what Markdown cannot take', async () => {
+    expect(fullText('## Found it\r\n\r\n\r\n\r\n- auth.ts\n- session.ts\x07\x1b', 100)).toBe('## Found it\n\n- auth.ts\n- session.ts')
+    expect(fullText('a\tb', 10)).toBe('a\tb')
+    expect(fullText('x'.repeat(50), 10)).toBe(`${'x'.repeat(9)}…`)
+    expect(Array.from(fullText('😀'.repeat(20), 5))).toHaveLength(5)
   })
 
   test('gist drops Markdown marks and fits the text on one line', async () => {
