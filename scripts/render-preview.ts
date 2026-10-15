@@ -398,14 +398,18 @@ function panePreview(s: Scene, now: number, selectedId: string): string {
   out += '</g>'
   out += badge(4, RIGHT_X + 2, boxY + 2)
 
-  // The legend button
+  // The legend button, and the button that opens the recap of this job
   const buttonY = boxY + boxH + 24
   out += `<rect x="${PAD}" y="${buttonY}" width="124" height="30" rx="6" fill="#ffffff" stroke="#bdb8aa"/>`
   out += `<g font-family="${SANS}">${txt(PAD + 62, buttonY + 20, 'Show legend', ` font-size="13" text-anchor="middle" fill="${INK}"`)}</g>`
   out += badge(5, PAD + 140, buttonY + 15)
+  const jobX = PAD + 170
+  out += `<rect x="${jobX}" y="${buttonY}" width="134" height="30" rx="6" fill="#ffffff" stroke="#bdb8aa"/>`
+  out += `<g font-family="${SANS}">${txt(jobX + 67, buttonY + 20, 'Show this job', ` font-size="13" text-anchor="middle" fill="${INK}"`)}</g>`
+  out += badge(6, jobX + 150, buttonY + 15)
 
   const height = Math.max(buttonY + 30, y) + PAD + 8
-  const caption = "The Pixel Office pane: the animated office, a feed of what just happened, who's doing what with a details box, and a legend button."
+  const caption = "The Pixel Office pane: the animated office, a feed of what just happened, who's doing what with a details box, a legend button and a button for the recap of this job."
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}">` +
     `<title>The Pixel Office pane</title><desc>${escapeXml(caption)}</desc>` +

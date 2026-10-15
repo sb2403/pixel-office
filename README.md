@@ -64,7 +64,7 @@ Two signs worth knowing. A red puff above a character means a tool call just hit
 
 ## Reading the panel
 
-<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Researcher 2, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report and how long it was on the job. A Show legend button sits at the bottom." width="100%">
+<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Researcher 2, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report, its tokens and how long it was on the job. A Show legend button and a Show this job button sit at the bottom." width="100%">
 
 The numbers below match the numbers in the picture.
 
@@ -73,6 +73,7 @@ The numbers below match the numbers in the picture.
 3. **Who's doing what.** The team, as an org chart: indentation shows who reports to whom. Each row reads name, status, and what it is doing right now in words ("reading session.ts", "waiting on Planner and Assistant"). Green is working, teal is coordinating (waiting on helpers), yellow is "needs you" (waiting on your answer or permission), grey is idle or done. The dim line with an arrow under a helper is its objective, the job it was hired to do. A long chart ends with a "+N more" line.
 4. **Details.** Click a name to open its details: its role and what that kind of agent does, its job, the start of the brief its boss wrote, what it is doing now, who it reports to and whether that boss is waiting on it, the start of its report once it has handed one in, what its work cost once it has (tokens, and the model it ran on), and an "On the job" timer that counts up while it works. A brief or report too long for one line has a "Read the full brief" (or report) link under it that opens the whole text, formatted. Click the name again to close the box.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
+6. **Show this job.** A button that opens the recap of the job in front of you: see below.
 
 ## The recap of a job
 

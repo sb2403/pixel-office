@@ -358,6 +358,35 @@ the brief a boss writes and the report a helper hands back, were dropped althoug
 Still out of scope: changing what Claude does. The mod stays an observer that uses no model tokens; making Main
 delegate more is a job for prompts or agent definitions, not for this mod.
 
+## 0.4.0: cost, recap and the story
+
+- **The feed keeps the story.** Feed lines carry `routineOf`, the agent whose routine work they report. A routine
+  line replaces that agent's previous one, so eight lines hold every milestone (hires, hand-backs, messages, waits
+  on the person, errors, turns) plus each agent's latest action, however many helpers work at once.
+- **Cost.** `handedBack` and `turnEnded` carry `usage` from `turn.complete` (token counts summed over the turn's
+  requests, and the model that answered last). Agents keep `{ tokens, reused, model }`, added up over turns.
+  Tokens, never money: prices change.
+- **Called back.** `spawned` carries `isResume` from `agent.spawn`'s `resume` (the run keeps its agent id). The
+  agent comes back by the elevator, or from the break room, and is briefed again; it counts as awaited at once.
+- **Whole texts.** Briefs and reports keep up to 2,000 characters with their line breaks; the details box shows a
+  200-character excerpt and offers the whole text, drawn as `Markdown`, when the excerpt cut something. Only the
+  ten most recently finished helpers keep whole texts.
+- **Jobs.** `Scene.job` runs from a message to the next (a continuation turn belongs to the same job); agents keep
+  `doneAt`. `hooks/recap.ts` derives the recap: lanes in hire order, helper time, time together (merged spans),
+  the peak, tokens, and a speed-up said only for two or more helpers and a ratio of at least 1.2. The swimlane
+  colors bars by how an agent worked with Main (Main, waited for, alongside): the three-slot palette is the
+  largest the palette validator passes for every pair in light and dark, and role is already the row's name.
+- **History** (option `history`, off by default): a record per job under the store key `jobs`, the newest 20,
+  saved from the flush that applies a `turnEnded` and checked when read back.
+- **Reminders** (option `notify`, off by default): an agent waiting on the person for 30 seconds is said once per
+  wait, as a toast and through `$.ui.notify`, which raises a native notification only where there is a terminal.
+- **Fixes.** A scene saved by an older version is restored with defaults at every read (`restore`, which returns
+  the same object when nothing is missing). An agent waiting on the person is never swept.
+- **CI.** GitHub runs the tests and both validations on 2.1.295 and the newest release on every change and every
+  Monday, and fails when the README pictures no longer match the drawing code. Type-checking stays local.
+- **Animation.** `$.ui.blit` and `Client` cannot help the desktop pane on 2.1.301; see
+  `notes/2026-10-15-blit-spike.md`.
+
 ## Out of scope
 
 - Other sessions on the machine (a "building" view).
