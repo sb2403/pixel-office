@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { isExempt, redirectTargets, writesFile } from '../hooks/rules'
+import { isExempt, normalize, redirectTargets, withoutHeredocBodies, writesFile } from '../hooks/rules'
 
 describe('the places Main may always write', () => {
   test('its memory, its plans, and scratch space', async () => {
@@ -15,10 +15,54 @@ describe('the places Main may always write', () => {
     expect(isExempt('D:\\Claude\\Pixel Office\\.claude\\worktrees\\w\\pixel-office\\hooks\\a.ts')).toBe(false)
     expect(isExempt('/home/me/.claude/settings.json')).toBe(false)
   })
+
+  test('only under the home and temp folders, not any folder that happens to share a name', async () => {
+    expect(isExempt('/work/src/scratchpad/a.ts')).toBe(false)
+    expect(isExempt('/work/.claude/projects/x/a.md')).toBe(false)
+    expect(isExempt('/work/tmp/a.ts')).toBe(false)
+    expect(isExempt('D:\\proj\\Temp\\claude\\a.ts')).toBe(false)
+  })
+
+  test('a path that climbs out of an exempt folder is judged by where it ends up', async () => {
+    expect(isExempt('/tmp/../work/a.ts')).toBe(false)
+    expect(isExempt('/tmp/x/../y.txt')).toBe(true)
+    expect(isExempt('/Users/me/.claude/projects/../settings.json')).toBe(false)
+    expect(isExempt('/tmp/../../etc/passwd')).toBe(false)
+    expect(isExempt('/../tmp/a')).toBe(false)
+  })
+
+  test('paths are made plain first', async () => {
+    expect(normalize('C:\\Users\\me\\.\\a\\..\\b')).toBe('C:/Users/me/b')
+    expect(normalize('/a//b/./c/')).toBe('/a/b/c/')
+    expect(normalize('/..')).toBeNull()
+  })
+})
+
+describe('heredocs', () => {
+  test("only the body goes: what is on the operator's line and after the body is still a command", async () => {
+    expect(withoutHeredocBodies("cat <<'EOF'\nx > y\nEOF\necho done")).toBe('cat  \necho done')
+    expect(redirectTargets('cat <<EOF > out.txt\nbody\nEOF')).toEqual(['out.txt'])
+    expect(redirectTargets("cat <<'EOF' >> log.txt\nx\nEOF")).toEqual(['log.txt'])
+    expect(redirectTargets('cat <<EOF\nx\nEOF\necho hi > after.txt')).toEqual(['after.txt'])
+    expect(redirectTargets('cat <<-EOF > t.txt\n\tbody\n\tEOF')).toEqual(['t.txt'])
+    expect(redirectTargets('cat <<A > a.txt; cat <<B > b.txt\n1\nA\n2\nB')).toEqual(['a.txt', 'b.txt'])
+  })
+
+  test('a here-string or a quoted <<, or no end to the body, does not confuse it', async () => {
+    expect(redirectTargets('cat <<< "x" > out.txt')).toEqual(['out.txt'])
+    expect(redirectTargets('echo "a <<EOF b" > out.txt')).toEqual(['out.txt'])
+    expect(redirectTargets('cat <<EOF > f.txt\nnever ends > g.txt')).toEqual(['f.txt'])
+  })
+
+  test('a writer after a heredoc is still seen, and one inside its body is not', async () => {
+    expect(writesFile('cat <<EOF | tee out.txt\nx\nEOF')).toBe('tee')
+    expect(writesFile("cat <<'EOF'\nsed -i s/a/b/ x\nEOF")).toBeNull()
+    expect(writesFile('cat <<EOF > notes.txt\nx\nEOF')).toBe('a redirect to notes.txt')
+  })
 })
 
 describe('redirects', () => {
-  test('finds what a redirect writes, outside quotes and before a heredoc', async () => {
+  test('finds what a redirect writes, outside quotes and outside heredoc bodies', async () => {
     expect(redirectTargets('echo hi > out.txt')).toEqual(['out.txt'])
     expect(redirectTargets('echo hi >> "a b.log"')).toEqual(['a b.log'])
     expect(redirectTargets('cmd 1> a.txt 2> b.txt')).toEqual(['a.txt', 'b.txt'])
@@ -41,6 +85,7 @@ describe('what counts as writing a file', () => {
     expect(writesFile('cat > "$SP/bar.ts" <<EOF\nx\nEOF')).toBe('a redirect to $SP/bar.ts')
     expect(writesFile('echo hi > /tmp/note.txt')).toBeNull()
     expect(writesFile('echo hi > C:/Users/me/AppData/Local/Temp/claude/x/scratchpad/n.txt')).toBeNull()
+    expect(writesFile('echo hi > /tmp/../work/n.txt')).toBe('a redirect to /tmp/../work/n.txt')
   })
 
   test('tee, in-place edits, PowerShell writers and patches', async () => {
