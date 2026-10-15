@@ -57,6 +57,12 @@ export function withoutHeredocBodies(command: string): string {
       out += ch
       continue
     }
+    // `<<<` is a here-string, one word: its last two characters are not a heredoc operator.
+    if (ch === '<' && command.startsWith('<<<', i)) {
+      out += '<<<'
+      i += 2
+      continue
+    }
     if (ch === '<' && command[i + 1] === '<' && command[i + 2] !== '<') {
       const found = /^<<(-?)\s*(?:'([^']*)'|"([^"]*)"|\\?([^\s;&|<>()]+))/.exec(command.slice(i))
       if (found !== null) {

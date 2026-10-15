@@ -50,6 +50,10 @@ describe('heredocs', () => {
 
   test('a here-string or a quoted <<, or no end to the body, does not confuse it', async () => {
     expect(redirectTargets('cat <<< "x" > out.txt')).toEqual(['out.txt'])
+    // A here-string is not a heredoc: the lines after it are still commands.
+    expect(redirectTargets('cat <<< foo\necho hi > f.txt\nfoo')).toEqual(['f.txt'])
+    expect(redirectTargets('grep x <<< EOF\necho hi > f.txt')).toEqual(['f.txt'])
+    expect(redirectTargets('cat <<< "a" <<EOF > g.txt\nbody\nEOF')).toEqual(['g.txt'])
     expect(redirectTargets('echo "a <<EOF b" > out.txt')).toEqual(['out.txt'])
     expect(redirectTargets('cat <<EOF > f.txt\nnever ends > g.txt')).toEqual(['f.txt'])
   })
