@@ -49,28 +49,43 @@ describe('targetOf', () => {
   })
 
   test('flattens and clips long commands', async () => {
-    const t = targetOf('Bash', { command: 'npm run build && npm test -- --watch=false' })
-    expect(t).toBe('npm run build && npm te…')
-    expect(t).toHaveLength(24)
-    expect(targetOf('Bash', { command: 'echo a\n  echo b' })).toBe('echo a echo b')
+    // A program the office does not know is shown as typed, flattened and clipped.
+    const t = targetOf('Bash', { command: 'zzzbuild --all --target=release && zzztest --everything' })
+    expect(t).toBe('zzzbuild --all --target=rel…')
+    expect(t).toHaveLength(28)
+    expect(targetOf('Bash', { command: 'zzz a\n  zzz b' })).toBe('zzz a')
   })
 
   test('a command shows what it does, not the folder it starts in', async () => {
-    expect(targetOf('Bash', { command: 'cd "/d/Claude/Pixel Office" && gh pr create --title x' })).toBe('gh pr create --title x')
-    expect(targetOf('Bash', { command: 'cd /a && cd b; npm test' })).toBe('npm test')
+    expect(targetOf('Bash', { command: 'cd "/d/Claude/Pixel Office" && gh pr create --title x' })).toBe('Open a pull request')
+    expect(targetOf('Bash', { command: 'cd /a && cd b; npm test' })).toBe('Test the code')
     expect(targetOf('Bash', { command: 'cd /work' })).toBe('cd /work')
+    // Claude's own description is the most particular thing there is, when it fits a bubble.
+    expect(targetOf('Bash', { command: 'npm test', description: 'Check the PR 7 build' })).toBe('Check the PR 7 build')
+    expect(targetOf('Bash', { command: 'npm test', description: 'Run the whole suite again after the fix to see it pass' })).toBe('Test the code')
+    expect(targetOf('Bash', { command: 'zzz', description: 'Run the whole suite again after the fix to see it pass' })).toBe('Run the whole suite again a…')
   })
 
   test('reads patterns, queries, hosts and outside services', async () => {
     expect(targetOf('Grep', { pattern: 'login' })).toBe('login')
     expect(targetOf('WebSearch', { query: 'pixel art' })).toBe('pixel art')
     expect(targetOf('WebFetch', { url: 'https://docs.anthropic.com/en/x' })).toBe('docs.anthropic.com')
-    expect(targetOf('mcp__github__create_issue', { title: 'Bug' })).toBe('github')
+    expect(targetOf('mcp__github__create_issue', { title: 'Bug' })).toBe('Bug')
+    expect(targetOf('mcp__github__list_repos', { visibility: 'all' })).toBe('github')
+    expect(targetOf('Grep', { pattern: 'login', path: '/work/src' })).toBe('login in src')
+    expect(targetOf('Grep', { pattern: 'login', glob: '*.ts' })).toBe('login in *.ts')
+    expect(targetOf('TaskCreate', { subject: 'Wire up the pane' })).toBe('Wire up the pane')
+    const todos = [
+      { content: 'Write tests', status: 'completed', activeForm: 'Writing tests' },
+      { content: 'Fix the bug', status: 'in_progress', activeForm: 'Fixing the bug' },
+      { content: 'Ship', status: 'pending', activeForm: 'Shipping' },
+    ]
+    expect(targetOf('TodoWrite', { todos })).toBe('Fixing the bug')
     expect(targetOf('Mystery', {})).toBe('')
   })
 
   test('drops control characters from what it shows', async () => {
-    expect(targetOf('Bash', { command: 'echo \x1b[31mred\x1b[0m\x07' })).toBe('echo [31mred[0m')
+    expect(targetOf('Bash', { command: 'zzz \x1b[31mred\x1b[0m\x07' })).toBe('zzz [31mred[0m')
     expect(targetOf('Read', { file_path: '/work/\x00odd\x7f.ts' })).toBe('odd.ts')
   })
 })
@@ -117,10 +132,10 @@ describe('plain-English details', () => {
     expect(explainCommand('git status && git diff')).toBe('See what has changed')
     expect(explainCommand('git commit -m "wip"')).toBe('Save a checkpoint of the work')
     expect(explainCommand('git push -u origin main')).toBe('Upload the work')
-    expect(explainCommand('cat log.txt | tail -5')).toBe('Show a file')
-    expect(explainCommand('cd /w && gh pr create --title x')).toBe('Work with GitHub')
-    expect(explainCommand('claude plugin list')).toBe('Manage Claude plugins')
-    expect(explainCommand('python - <<EOF')).toBe('Run a script')
+    expect(explainCommand('cat log.txt | tail -5')).toBe('Read log.txt')
+    expect(explainCommand('cd /w && gh pr create --title x')).toBe('Open a pull request')
+    expect(explainCommand('claude plugin list')).toBe('List the plugins')
+    expect(explainCommand('python - <<EOF')).toBe('Run a Python snippet')
     expect(explainCommand('makefile-lint')).toBe('')
     expect(explainCommand('')).toBe('')
   })

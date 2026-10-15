@@ -1,4 +1,7 @@
 import type { Point, StationId } from '../types'
+import { commandIntent, explainCommand } from './commands'
+
+export { explainCommand }
 
 export const WIDTH = 240
 export const HEIGHT = 150
@@ -212,16 +215,30 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-// A command usually starts with `cd somewhere &&`, which says where, not what. The bubble shows what follows.
-function withoutCd(command: string): string {
-  let rest = command.trimStart()
-  for (;;) {
-    const next = rest.replace(/^(cd|pushd)\s+("[^"]*"|'[^']*'|\S+)\s*(&&|;)\s*/, '')
-    if (next === rest) return rest
-    if (next === '') return command
-    rest = next
-  }
+// What the bubble over an agent says about a command. Claude's own description of it is the most particular, so it
+// is used when it fits a bubble; else what the command is for, read from its first real step; else (a program the
+// office does not know) that step as typed, past the `cd` and variables in front of it.
+const BUBBLE_MAX = 28
+function commandTarget(description: string, command: string): string {
+  const said = description.trim()
+  if (said !== '' && Array.from(said).length <= BUBBLE_MAX) return clip(said, BUBBLE_MAX)
+  const intent = commandIntent(command)
+  if (intent.phrase !== '') return clip(intent.phrase, BUBBLE_MAX)
+  return clip(said !== '' ? said : intent.step, BUBBLE_MAX)
 }
+
+// The active item of a to-do list, said as the list says it: "Fixing the login bug".
+function activeTodo(input: Record<string, unknown>): string {
+  const todos = input.todos
+  if (!Array.isArray(todos)) return ''
+  const items = todos.filter((t): t is Record<string, unknown> => typeof t === 'object' && t !== null)
+  const active = items.find(t => t.status === 'in_progress') ?? items.find(t => t.status === 'pending')
+  const words = active === undefined ? '' : (active.activeForm ?? active.content)
+  return typeof words === 'string' ? words : ''
+}
+
+// What a call to an outside service (an MCP tool) is about: the first of the arguments that names a thing.
+const SUBJECT_KEYS = ['title', 'subject', 'name', 'query', 'q', 'path', 'file', 'repo', 'url', 'id', 'text']
 
 export function targetOf(tool: string, input: Record<string, unknown>): string {
   const str = (key: string): string => {
@@ -230,8 +247,13 @@ export function targetOf(tool: string, input: Record<string, unknown>): string {
   }
   if (str('file_path')) return clip(baseName(str('file_path')))
   if (str('notebook_path')) return clip(baseName(str('notebook_path')))
-  if (str('command')) return clip(withoutCd(str('command')))
-  if (str('pattern')) return clip(str('pattern'))
+  if (tool === 'TodoWrite' && activeTodo(input) !== '') return clip(activeTodo(input), BUBBLE_MAX)
+  if (str('command')) return commandTarget(str('description'), str('command'))
+  if (str('pattern')) {
+    // A search says where it looks when it was pointed somewhere: `login in src`.
+    const where = str('path') || str('glob')
+    return clip(where === '' ? str('pattern') : `${str('pattern')} in ${baseName(where)}`)
+  }
   if (str('query')) return clip(str('query'))
   if (str('url')) {
     try {
@@ -243,7 +265,11 @@ export function targetOf(tool: string, input: Record<string, unknown>): string {
   if (str('skill')) return clip(str('skill'))
   if (str('to')) return clip(str('to'))
   if (str('description')) return clip(str('description'))
-  if (tool.startsWith('mcp__')) return clip(tool.split('__')[1] ?? tool)
+  if (str('subject')) return clip(str('subject'))
+  if (tool.startsWith('mcp__')) {
+    const key = SUBJECT_KEYS.find(k => str(k) !== '')
+    return clip(key === undefined ? (tool.split('__')[1] ?? tool) : str(key))
+  }
   return ''
 }
 
@@ -263,42 +289,6 @@ export function fullText(text: string, max: number): string {
   const lines = stripControls(text.replace(/\r\n?/g, '\n')).replace(/\n{3,}/g, '\n\n').trim()
   const chars = Array.from(lines)
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : lines
-}
-
-// What a common command is for, in words: the fallback when Claude did not describe the command itself. Only
-// the first real step counts: a leading `cd somewhere &&`, variable settings, `sudo` and `npx` are skipped.
-const COMMANDS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/^((npm|pnpm|yarn|bun)( run)? test|jest|vitest|mocha|pytest|(go|cargo|dotnet|deno) test|python3? -m (pytest|unittest)|claude plugin test)\b/, 'Test the code'],
-  [/^((npm|pnpm|bun) (install|i|ci|add)|yarn (install|add)|pip3? install|(uv|poetry) (add|install|sync)|cargo add|go get)\b|^yarn$/, 'Install packages'],
-  [/^((npm|pnpm|yarn|bun) run build|tsc|make|cargo build|go build)\b/, 'Build the project'],
-  [/^((npm|pnpm|yarn|bun) run (lint|format|typecheck)|eslint|prettier|ruff|black|biome)\b/, 'Check the code for mistakes'],
-  [/^git (status|diff|log|show)\b/, 'See what has changed'],
-  [/^git commit\b/, 'Save a checkpoint of the work'],
-  [/^git push\b/, 'Upload the work'],
-  [/^git (pull|fetch)\b/, 'Download the latest changes'],
-  [/^git clone\b/, 'Copy a project to work on'],
-  [/^git (checkout|switch|branch|merge|rebase)\b/, 'Work with branches'],
-  [/^(ls|dir|tree|find)\b/, 'Look through folders'],
-  [/^(cat|head|tail|less)\b/, 'Show a file'],
-  [/^(grep|rg|findstr)\b/, 'Search the files'],
-  [/^(curl|wget)\b/, 'Fetch something from the web'],
-  [/^mkdir\b/, 'Make a folder'],
-  [/^(rm|rmdir|del)\b/, 'Delete files'],
-  [/^(mv|move)\b/, 'Move files'],
-  [/^(cp|copy)\b/, 'Copy files'],
-  [/^gh (pr|issue|run|repo|api|auth)\b/, 'Work with GitHub'],
-  [/^claude plugin\b/, 'Manage Claude plugins'],
-  [/^(python3?|node|tsx|ts-node|deno run|bun run)\b/, 'Run a script'],
-  [/^(sleep|timeout)\b/, 'Wait a moment'],
-  [/^(sed|awk|tr|sort|uniq|wc|cut|jq)\b/, 'Process some text'],
-  [/^(echo|printf)\b/, 'Print a message'],
-]
-
-export function explainCommand(command: string): string {
-  const steps = command.split(/&&|\|\||;|\n/).map(step => step.split('|')[0]?.trim() ?? '')
-  const first = steps.find(step => step !== '' && !/^(cd|pushd|set|export)\b/.test(step)) ?? ''
-  const bare = first.replace(/^(\w+=\S*\s+)+/, '').replace(/^(sudo|npx|bunx|time)\s+/, '')
-  return COMMANDS.find(([pattern]) => pattern.test(bare))?.[1] ?? ''
 }
 
 // The plain-English gist of a call, from what Claude wrote into its input: the description it gives every
