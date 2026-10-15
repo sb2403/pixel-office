@@ -12,6 +12,8 @@ import {
   isNight,
   orgRows,
   renderOffice,
+  forgetOffice,
+  officeSource,
   sceneTimeOf,
   tagsBelow,
 } from '../hooks/render'
@@ -182,20 +184,22 @@ describe('renderOffice', () => {
     expect(tagsBelow([s.agents.a1!], 60_000).size).toBe(0)
   })
 
-  test('the picture does not change while nothing happens, so the desktop never draws it again', async () => {
+  test('the picture is the same text until the scene changes, so the desktop never draws it again', async () => {
+    forgetOffice()
     const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
-    const at = sceneTimeOf(s)
-    expect(at).toBe(1500)
-    // Walking is under way, yet one moment later (and a second after that) it is the same picture.
-    const first = renderOffice(s, at, undefined, 2000)
-    expect(renderOffice(s, at, undefined, 2350)).toBe(first)
-    expect(renderOffice(s, at, undefined, 3700)).toBe(first)
-    // Drawn as of the clock instead, it would be a new picture every time.
+    expect(sceneTimeOf(s)).toBe(1500)
+    // Walking is under way, yet a moment later, and a second after that, it is the very same picture.
+    const first = officeSource(s, 2000)
+    expect(officeSource(s, 2350)).toBe(first)
+    expect(officeSource(s, 3700)).toBe(first)
+    // Drawn as of the clock instead, it would be a new picture each time.
     expect(renderOffice(s, 2350)).not.toBe(renderOffice(s, 3700))
-    // Something happening makes a new one.
+    // Another agent's event is a new picture, drawn as of now, so a walk in progress carries on from where it is.
     const later = reduce(s, readEv('a1', 'login.ts', 4000))
-    expect(sceneTimeOf(later)).toBe(4000)
-    expect(renderOffice(later, sceneTimeOf(later), undefined, 4100)).not.toBe(first)
+    const again = officeSource(later, 4100)
+    expect(again).not.toBe(first)
+    expect(again).toBe(renderOffice(later, 4100))
+    expect(officeSource(later, 4600)).toBe(again)
   })
 
   test('night and day differ', async () => {

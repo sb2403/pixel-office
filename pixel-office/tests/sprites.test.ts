@@ -17,7 +17,12 @@ test('a person wears its look and only animates legs while walking', async () =>
   expect(still).toContain('#f5c4b3')
   expect(still).toContain('translate(-4,-12)')
   expect(still.includes('animateTransform')).toBe(false)
-  expect(personSvg(look, 'plain', 1200)).toContain('repeatDur="1200ms"')
+  const walking = personSvg(look, 'plain', 1200)
+  expect(walking).toContain('repeatDur="1200ms"')
+  // A stride on each leg, half a step apart, and a bob in the body.
+  expect(walking.match(/dur="0.6s"/g)).toHaveLength(2)
+  expect(walking).toContain('begin="0.3s"')
+  expect(walking).toContain('dur="0.3s"')
 })
 
 test('main wears a tie and teammates a lanyard', async () => {

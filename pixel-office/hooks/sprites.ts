@@ -35,18 +35,24 @@ const SHOES = '#2c2c2a'
 
 export function personSvg(look: Look, variant: Variant, walkMs: number): string {
   const colors = { h: look.hair, s: look.skin, e: EYES, c: look.shirt, t: TIE, y: LANYARD, p: PANTS }
+  // A stride: each leg swings forward lifted, plants, swings back, and the other leg does the same half a step
+  // later, in whole pixels so it stays crisp. The body rises a pixel on each step.
   const leg = (x: number, begin: number): string => {
     const rects =
       `<rect x="${x}" y="10" width="1" height="1" fill="${PANTS}"/>` +
       `<rect x="${x}" y="11" width="1" height="1" fill="${SHOES}"/>`
     if (walkMs <= 0) return rects
     return (
-      `<g>${rects}<animateTransform attributeName="transform" type="translate" ` +
-      `values="0,0;0,-1;0,0" dur="0.3s" begin="${begin}s" repeatDur="${walkMs}ms"/></g>`
+      `<g>${rects}<animateTransform attributeName="transform" type="translate" calcMode="discrete" ` +
+      `values="0,0;1,-1;1,0;0,0;-1,0;-1,0" keyTimes="0;0.17;0.34;0.5;0.67;0.84" dur="0.6s" begin="${begin}s" repeatDur="${walkMs}ms"/></g>`
     )
   }
+  const body = (inner: string): string =>
+    walkMs <= 0
+      ? inner
+      : `<g>${inner}<animateTransform attributeName="transform" type="translate" calcMode="discrete" values="0,0;0,-1" keyTimes="0;0.5" dur="0.3s" repeatDur="${walkMs}ms"/></g>`
   const ground = '<rect x="-4" y="-1" width="8" height="2" fill="#000000" fill-opacity="0.22"/><rect x="-3" y="1" width="6" height="1" fill="#000000" fill-opacity="0.14"/>'
-  return `${ground}<g transform="translate(-4,-12)">${rle(BODY[variant], colors)}${leg(2, 0)}${leg(5, 0.15)}</g>`
+  return `${ground}<g transform="translate(-4,-12)">${body(rle(BODY[variant], colors))}${leg(2, 0)}${leg(5, 0.3)}</g>`
 }
 
 const ICONS: Record<StationId, Grid> = {
