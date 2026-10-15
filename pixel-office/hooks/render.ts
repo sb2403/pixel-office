@@ -3,6 +3,7 @@ import { etaDetail, etaOf, etaWords } from './eta'
 import { MAIN, isCoordinating, isWalkingAt, positionAt, waitingOn } from './model'
 import { doing } from './narrate'
 import { OFFICE_DEFS, officeBase, officeDecor, rect } from './office'
+import { petSvg } from './pet'
 import { modelName, roleFor, tokenCount } from './roles'
 import { iconSvg, itemSvg, personSvg } from './sprites'
 import type { Variant } from './sprites'
@@ -314,7 +315,7 @@ function overlays(scene: Scene, now: number): string {
     here.filter(a => a.station === station && a.activity !== null && !isWalkingAt(a, now))
   let out = ''
   if (scene.briefing !== null) {
-    out += `<text x="113" y="103.5" font-size="3.5" text-anchor="middle" fill="#2c2c2a">${escapeXml(clip(scene.briefing, 18))}</text>`
+    out += `<text x="116" y="99" font-size="3.5" text-anchor="middle" fill="#2c2c2a">${escapeXml(clip(scene.briefing, 18))}</text>`
   }
   if (scene.todos !== null) {
     const notes = [
@@ -400,7 +401,7 @@ export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): st
     const below = tagsBelow(drawn, now)
     const people = drawn.map(a => drawAgent(a, scene, now, below.has(a.id))).join('')
     const extra = ranked.length - count
-    return `${head}${withDecor ? officeDecor() : ''}${props}${people}${extra > 0 ? badge(extra) : ''}</svg>`
+    return `${head}${withDecor ? officeDecor() + petSvg(now) : ''}${props}${people}${extra > 0 ? badge(extra) : ''}</svg>`
   }
   let svg = build(true, ranked.length)
   if (svg.length <= budget) return svg

@@ -75,6 +75,10 @@ The numbers below match the numbers in the picture.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 6. **Show this job.** A button that opens the recap of the job in front of you: see below.
 
+## The office cat
+
+There is a cat in the office. It has nothing to do with your session: it patrols the corridor, sits for a while at a few favourite spots, and naps on the break-room couch, on a loop of about a minute. It is drawn as animations inside the picture, so it costs no extra redraws, and it carries on from the same point of its loop whenever the picture is drawn again. It is left out only when the picture is too large to draw the decorations.
+
 ## The recap of a job
 
 A job is everything from a message you send until the next one. Once you have sent one, a **Show this job** button sits beside the legend button. It opens a recap that answers the question delegation raises: did splitting the work up help? If Main edited files itself rather than through a helper, the recap counts those edits too, so a coordinator that is not delegating shows.
