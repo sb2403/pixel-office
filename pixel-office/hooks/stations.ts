@@ -212,6 +212,17 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
+// A command usually starts with `cd somewhere &&`, which says where, not what. The bubble shows what follows.
+function withoutCd(command: string): string {
+  let rest = command.trimStart()
+  for (;;) {
+    const next = rest.replace(/^(cd|pushd)\s+("[^"]*"|'[^']*'|\S+)\s*(&&|;)\s*/, '')
+    if (next === rest) return rest
+    if (next === '') return command
+    rest = next
+  }
+}
+
 export function targetOf(tool: string, input: Record<string, unknown>): string {
   const str = (key: string): string => {
     const value = input[key]
@@ -219,7 +230,7 @@ export function targetOf(tool: string, input: Record<string, unknown>): string {
   }
   if (str('file_path')) return clip(baseName(str('file_path')))
   if (str('notebook_path')) return clip(baseName(str('notebook_path')))
-  if (str('command')) return clip(str('command'))
+  if (str('command')) return clip(withoutCd(str('command')))
   if (str('pattern')) return clip(str('pattern'))
   if (str('query')) return clip(str('query'))
   if (str('url')) {
@@ -275,6 +286,12 @@ const COMMANDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(rm|rmdir|del)\b/, 'Delete files'],
   [/^(mv|move)\b/, 'Move files'],
   [/^(cp|copy)\b/, 'Copy files'],
+  [/^gh (pr|issue|run|repo|api|auth)\b/, 'Work with GitHub'],
+  [/^claude plugin\b/, 'Manage Claude plugins'],
+  [/^(python3?|node|tsx|ts-node|deno run|bun run)\b/, 'Run a script'],
+  [/^(sleep|timeout)\b/, 'Wait a moment'],
+  [/^(sed|awk|tr|sort|uniq|wc|cut|jq)\b/, 'Process some text'],
+  [/^(echo|printf)\b/, 'Print a message'],
 ]
 
 export function explainCommand(command: string): string {
