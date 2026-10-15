@@ -42,10 +42,11 @@ describe('how long a helper usually takes', () => {
     expect(etaWords(late)).toBe('taking longer than usual')
   })
 
-  test('only helpers of the same kind, still out on a job, with a boss waiting, get one', async () => {
+  test('only helpers of the same kind, still out on a job, and not teammates, get one', async () => {
     const s = run([...history, hire('p1', 100_000, { type: 'Plan' }), hire('b1', 100_000, { isBackground: true }), hire('t1', 100_000, { isTeammate: true })])
     expect(etaOf(s, s.agents.p1!, 101_000)).toBeNull()
-    expect(etaOf(s, s.agents.b1!, 101_000)).toBeNull()
+    // A helper started in the background, as the Agent tool does by default, gets one like any other.
+    expect(etaOf(s, s.agents.b1!, 101_000)).not.toBeNull()
     expect(etaOf(s, s.agents.t1!, 101_000)).toBeNull()
     expect(etaOf(s, s.agents.main!, 101_000)).toBeNull()
     expect(etaOf(s, s.agents.h1!, 101_000)).toBeNull()
