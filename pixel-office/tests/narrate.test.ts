@@ -76,7 +76,7 @@ test('a permission prompt says what it is for, not which tool', async () => {
 })
 
 test('a turn that ends leaves Main waiting for the next message', async () => {
-  expect(narrate(emptyScene(), { kind: 'turnEnded', at: 1 })).toBe('Main finished and is waiting for your next message')
+  expect(narrate(emptyScene(), { kind: 'turnEnded', usage: null, at: 1 })).toBe('Main finished and is waiting for your next message')
 })
 
 test('a turn without a typed prompt is a continuation', async () => {
@@ -100,7 +100,7 @@ test('a hire says whether the boss waits for the report, works alongside, or gai
 test('hand-backs say whether the report came, the run was stopped or it failed', async () => {
   const hired = reduce(emptyScene(), hire())
   const back = (reason: 'answer' | 'aborted' | 'refusal' | 'error', report = '') =>
-    narrate(hired, { kind: 'handedBack', agentId: 'a1', reason, report, at: 2 })
+    narrate(hired, { kind: 'handedBack', agentId: 'a1', reason, report, usage: null, at: 2 })
   expect(back('answer')).toBe('Researcher handed its report to Main and left')
   expect(back('answer', 'The login flow starts in auth.ts')).toBe(
     'Researcher handed its report to Main and left: The login flow starts in auth.ts',
@@ -112,14 +112,14 @@ test('hand-backs say whether the report came, the run was stopped or it failed',
 
 test('a long report is cut short in the feed', async () => {
   const hired = reduce(emptyScene(), hire())
-  const line = narrate(hired, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'x'.repeat(300), at: 2 })
+  const line = narrate(hired, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'x'.repeat(300), usage: null, at: 2 })
   expect(line?.endsWith('…')).toBe(true)
   expect(line!.length).toBeLessThan(120)
 })
 
 test('a teammate that is stopped still takes a break', async () => {
   const hired = reduce(emptyScene(), hire({ id: 't1', name: 'scout', isTeammate: true, isBackground: true }))
-  const back = (reason: 'answer' | 'aborted') => narrate(hired, { kind: 'handedBack', agentId: 't1', reason, report: '', at: 2 })
+  const back = (reason: 'answer' | 'aborted') => narrate(hired, { kind: 'handedBack', agentId: 't1', reason, report: '', usage: null, at: 2 })
   expect(back('answer')).toBe('Scout reported to Main and took a break')
   expect(back('aborted')).toBe('Scout was stopped and took a break')
 })

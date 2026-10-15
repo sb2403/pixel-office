@@ -34,5 +34,24 @@ export function roleFor(type: string): Role {
   return ROLES[type] ?? { title: humanize(type), blurb: 'A specialist helper set up for one kind of job' }
 }
 
+// The model an agent ran on, the way people say it: `claude-haiku-5-5` is Haiku 5.5, `claude-sonnet-4-5-20250929`
+// Sonnet 4.5, `claude-3-5-haiku-20241022` just Haiku (the number before the name is not read as its version).
+// An id with no family name in it is shown as it is.
+export function modelName(id: string): string {
+  const m = /(opus|sonnet|haiku|fable)(?:-(\d{1,2})(?:-(\d{1,2}))?(?!\d))?/i.exec(id)
+  if (m === null) return id
+  const family = `${m[1]?.[0]?.toUpperCase() ?? ''}${m[1]?.slice(1).toLowerCase() ?? ''}`
+  const version = m[2] === undefined ? '' : ` ${m[2]}${m[3] === undefined ? '' : `.${m[3]}`}`
+  return `${family}${version}`
+}
+
+// 850, 3.4k, 38k, 1.3M.
+export function tokenCount(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+}
+
 // A name the engine gave an agent reads as a name: `scout` is shown as Scout. Messages still go to `scout`.
 export const asName = (name: string): string => `${name[0]?.toUpperCase() ?? ''}${name.slice(1)}`

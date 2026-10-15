@@ -71,7 +71,7 @@ The numbers below match the numbers in the picture.
 1. **The office.** The animated picture. Every character has a name tag, and the speech bubble shows what it is doing right now.
 2. **What's happening.** A plain-English feed with the time of each line, newest at the bottom, eight lines long. It keeps the story: who hired whom, who messaged whom, who reported back, who needs you and what went wrong. Routine work (reading, editing, running a command) gets one line per agent, its latest, so a few busy helpers cannot push the story out of view.
 3. **Who's doing what.** The team, as an org chart: indentation shows who reports to whom. Each row reads name, status, and what it is doing right now in words ("reading session.ts", "waiting on Planner and Assistant"). Green is working, teal is coordinating (waiting on helpers), yellow is "needs you" (waiting on your answer or permission), grey is idle or done. The dim line with an arrow under a helper is its objective, the job it was hired to do. A long chart ends with a "+N more" line.
-4. **Details.** Click a name to open its details: its role and what that kind of agent does, its job, the start of the brief its boss wrote, what it is doing now, who it reports to and whether that boss is waiting on it, the start of its report once it has handed one in, and an "On the job" timer that counts up while it works. Click the name again to close the box.
+4. **Details.** Click a name to open its details: its role and what that kind of agent does, its job, the start of the brief its boss wrote, what it is doing now, who it reports to and whether that boss is waiting on it, the start of its report once it has handed one in, what its work cost once it has (tokens, and the model it ran on), and an "On the job" timer that counts up while it works. Click the name again to close the box.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 
 In a terminal session the pane shows the same feed and team as plain text, under a line telling you to open the session in the Claude desktop app to see the picture.
@@ -152,6 +152,8 @@ Either way the new value applies to sessions you start afterwards. `claude plugi
 **A helper that left comes back?** Its boss called it back for more work, with everything it knew the first time. It steps out of the elevator again (a teammate walks over from the break room), is briefed in the meeting room, and the feed says "Main called Researcher back". It keeps its name, and its last report stays in its details box until it hands in a new one.
 
 **Someone is carrying a folder or an envelope?** A folder is a report on its way to the boss who asked for it; an envelope is a message on its way to another agent. Each disappears at the moment it is handed over.
+
+**What do "38k tokens (31k reused)" mean?** Tokens are the pieces of text a model reads and writes; they are what an agent's work costs. Every helper starts by reading its brief and whatever it looks up, so hiring helpers buys parallel work with tokens. "Reused" tokens were served from the prompt cache, text the model had read moments before, and cost far less than fresh ones. The count is summed over all of an agent's turns. The office shows tokens, not money, because prices change.
 
 **A name tag is under someone's feet?** Two characters stand so close that their name tags would cover each other, as when a boss sits beside the helper it is briefing. One tag moves below the feet so both stay readable.
 

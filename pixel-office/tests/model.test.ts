@@ -176,7 +176,7 @@ describe('work, errors and waiting', () => {
 })
 
 describe('the end of a turn', () => {
-  const turnEnded = (at: number): OfficeEvent => ({ kind: 'turnEnded', at })
+  const turnEnded = (at: number): OfficeEvent => ({ kind: 'turnEnded', usage: null, at })
   const turnStarted = (at: number): OfficeEvent => ({ kind: 'turnStarted', isContinuation: false, at })
 
   test('Main goes idle at the corner office when its turn ends', async () => {
@@ -224,7 +224,7 @@ describe('the end of a turn', () => {
   })
 
   test('a teammate resting in the break room is left alone', async () => {
-    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', report: '', at: 9000 }])
+    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', report: '', usage: null, at: 9000 }])
     const later = reduce(s, { kind: 'tick', at: 9000 + 5 * IDLE_MS })
     expect(later.agents.t1).toBe(s.agents.t1)
     expect(later.agents.t1!.station).toBe('breakroom')
@@ -233,12 +233,12 @@ describe('the end of a turn', () => {
   })
 
   test('a stopped subagent leaves like any other', async () => {
-    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', at: 2000 }])
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', usage: null, at: 2000 }])
     expect(s.agents.a1!.phase).toBe('gone')
     expect(s.agents.a1!.outcome).toBe('stopped')
     expect(s.agents.a1!.carry).toBeNull()
     expect(s.ticker.map(line => line.text)).toContain('Researcher was stopped and left')
-    const failed = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'error', report: '', at: 2000 }])
+    const failed = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'error', report: '', usage: null, at: 2000 }])
     expect(failed.agents.a1!.outcome).toBe('failed')
     expect(failed.ticker.map(line => line.text)).toContain('Researcher ran into a problem, told Main and left')
   })
@@ -248,7 +248,7 @@ describe('hand-backs and departures', () => {
   test('a finished subagent reports to its parent and leaves by elevator', async () => {
     const s = run([spawn('a1', 1000), start('a1', 'Read', 'auth.ts', 'c1', 3000), end('a1', 'c1', 4000)])
     const main = s.agents[MAIN]!
-    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'Sessions start in auth.ts', at: 20000 })
+    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'Sessions start in auth.ts', usage: null, at: 20000 })
     const a1 = done.agents.a1!
     expect(a1.phase).toBe('gone')
     expect(a1.station).toBe('elevator')
@@ -267,7 +267,7 @@ describe('hand-backs and departures', () => {
   })
 
   test('a teammate reports and takes a break instead of leaving', async () => {
-    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', report: '', at: 9000 }])
+    const s = run([spawn('t1', 1000, { name: 'scout', isTeammate: true }), { kind: 'handedBack', agentId: 't1', reason: 'answer', report: '', usage: null, at: 9000 }])
     expect(s.agents.t1!.label).toBe('Scout')
     expect(s.agents.t1!.name).toBe('scout')
     expect(s.agents.t1!.phase).toBe('idle')
@@ -276,7 +276,7 @@ describe('hand-backs and departures', () => {
   })
 
   test('a departed agent that works again comes back through the elevator', async () => {
-    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 2000 }])
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', usage: null, at: 2000 }])
     const back = reduce(s, start('a1', 'Read', 'again.ts', 'c9', 60000))
     expect(back.agents.a1!.phase).toBe('working')
     expect(back.agents.a1!.goneAt).toBeNull()
@@ -288,7 +288,7 @@ describe('hand-backs and departures', () => {
     let s = emptyScene()
     for (let i = 0; i < 60; i++) {
       s = reduce(s, spawn(`x${i}`, i))
-      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, reason: 'answer', report: '', at: i + 0.5 })
+      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, reason: 'answer', report: '', usage: null, at: i + 0.5 })
     }
     const gone = Object.values(s.agents).filter(a => a.phase === 'gone')
     expect(gone.length).toBe(GONE_KEEP)
@@ -384,7 +384,7 @@ describe('names', () => {
 })
 
 describe('coordinating', () => {
-  const back = (id: string, at: number, report = ''): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report, at })
+  const back = (id: string, at: number, report = ''): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report, usage: null, at })
   const turnStarted: OfficeEvent = { kind: 'turnStarted', isContinuation: false, at: 500 }
 
   test('a boss with nothing in hand is coordinating while its helpers are out', async () => {
@@ -432,8 +432,37 @@ describe('coordinating', () => {
   })
 })
 
+describe('what the work cost', () => {
+  const used = (tokens: number, reused: number, model = 'claude-haiku-5-5') => ({ tokens, reused, model })
+
+  test("a helper's hand-back records its tokens, and a teammate's add up over its turns", async () => {
+    const s = run([
+      spawn('t1', 1000, { name: 'scout', isTeammate: true, isBackground: true }),
+      { kind: 'handedBack', agentId: 't1', reason: 'answer', report: 'one', usage: used(30_000, 25_000), at: 5000 },
+      start('t1', 'Read', 'b.ts', 'r1', 9000),
+      { kind: 'handedBack', agentId: 't1', reason: 'answer', report: 'two', usage: used(8000, 6000, 'claude-sonnet-5-5'), at: 12_000 },
+    ])
+    expect(s.agents.t1!.usage).toEqual({ tokens: 38_000, reused: 31_000, model: 'claude-sonnet-5-5' })
+  })
+
+  test('a hand-back that counted nothing keeps what was known', async () => {
+    const s = run([spawn('a1', 1000), { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', usage: null, at: 2000 }])
+    expect(s.agents.a1!.usage).toBeNull()
+  })
+
+  test("Main's turns add up too", async () => {
+    const s = run([
+      { kind: 'turnStarted', isContinuation: false, at: 1 },
+      { kind: 'turnEnded', usage: used(1000, 0, 'claude-opus-5-5'), at: 2 },
+      { kind: 'turnStarted', isContinuation: false, at: 3 },
+      { kind: 'turnEnded', usage: used(500, 400, 'claude-opus-5-5'), at: 4 },
+    ])
+    expect(s.agents[MAIN]!.usage).toEqual({ tokens: 1500, reused: 400, model: 'claude-opus-5-5' })
+  })
+})
+
 describe('called back', () => {
-  const back = (id: string, at: number): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report: 'found it', at })
+  const back = (id: string, at: number): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report: 'found it', usage: null, at })
   const again = (at: number, extra: Partial<Extract<OfficeEvent, { kind: 'spawned' }>> = {}) =>
     spawn('a1', at, { isResume: true, description: 'check one more file', brief: 'Also look at session.ts', ...extra })
 
@@ -551,7 +580,7 @@ describe('review focus', () => {
   test('events for unknown agents leave the scene alone', async () => {
     const s = emptyScene()
     expect(reduce(s, end('nobody', 'c1', 1))).toBe(s)
-    expect(reduce(s, { kind: 'handedBack', agentId: 'nobody', reason: 'answer', report: '', at: 1 })).toBe(s)
-    expect(reduce(s, { kind: 'handedBack', agentId: MAIN, reason: 'answer', report: '', at: 1 })).toBe(s)
+    expect(reduce(s, { kind: 'handedBack', agentId: 'nobody', reason: 'answer', report: '', usage: null, at: 1 })).toBe(s)
+    expect(reduce(s, { kind: 'handedBack', agentId: MAIN, reason: 'answer', report: '', usage: null, at: 1 })).toBe(s)
   })
 })

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
-import type { OfficeEvent } from '../types'
+import type { OfficeEvent, Usage } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
 import { PANE, PANE_TITLE } from './state'
@@ -20,6 +20,16 @@ const UNTRACKED = new Set(['Agent', 'Task'])
 const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
+
+// A turn's token counts, summed over its requests (absent when nothing counted: an interrupt, an API error).
+const usageOf = (u: TurnUsage | undefined): Usage | null =>
+  u === undefined
+    ? null
+    : {
+        tokens: u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
+        reused: u.cache_read_input_tokens,
+        model: u.model,
+      }
 
 const quietly = async (work: () => Promise<void> | void): Promise<void> => {
   try {
@@ -183,10 +193,10 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     await quietly(async () => {
       const at = await $.clock.now()
+      const usage = usageOf(e.usage)
       if (e.agentId !== undefined) {
-        push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, report: gist(e.answer, REPORT_MAX), at })
-      }
-      else push({ kind: 'turnEnded', at })
+        push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, report: gist(e.answer, REPORT_MAX), usage, at })
+      } else push({ kind: 'turnEnded', usage, at })
     })
     return next(e)
   }).catch(($, e, next) => next(e))

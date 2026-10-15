@@ -27,6 +27,11 @@ export type Activity = { tool: string; target: string; detail: string; callId: s
 // over at `until`, when the walk reaches the other agent.
 export type Carry = { item: 'report' | 'message'; until: number }
 
+// What an agent's work cost, summed over its turns: every token the model read or wrote, how many of those it
+// reused from the prompt cache (far cheaper than fresh ones), and the model that answered last. Tokens, not
+// money: prices change, and a stale price would be a wrong number.
+export type Usage = { tokens: number; reused: number; model: string }
+
 // How a helper's job ended: it handed in its report, it was stopped, or it ran into a problem.
 export type Outcome = 'reported' | 'stopped' | 'failed'
 
@@ -44,6 +49,7 @@ export type Agent = {
   brief: string
   report: string
   outcome: Outcome | null
+  usage: Usage | null
   isTeammate: boolean
   isBackground: boolean
   phase: Phase
@@ -93,8 +99,15 @@ export type OfficeEvent =
   | { kind: 'toolEnded'; agentId: string; callId: string; isError: boolean; at: number }
   | { kind: 'waiting'; agentId: string | null; tool: string; at: number }
   | { kind: 'turnStarted'; isContinuation: boolean; at: number }
-  | { kind: 'turnEnded'; at: number }
-  | { kind: 'handedBack'; agentId: string; reason: 'answer' | 'aborted' | 'refusal' | 'error'; report: string; at: number }
+  | { kind: 'turnEnded'; usage: Usage | null; at: number }
+  | {
+      kind: 'handedBack'
+      agentId: string
+      reason: 'answer' | 'aborted' | 'refusal' | 'error'
+      report: string
+      usage: Usage | null
+      at: number
+    }
   | { kind: 'todos'; done: number; open: number; at: number }
   | { kind: 'tick'; at: number }
 

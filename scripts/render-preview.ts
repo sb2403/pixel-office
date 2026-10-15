@@ -89,7 +89,14 @@ const STORY: OfficeEvent[] = [
   // walks to the meeting room to brief it, and now it too is coordinating.
   spawn(DIGGER, 'Explore', 'find why a test fails', 'Find out why the token refresh test fails.', 104, TESTER),
   // The Researcher hands its report in: it walks to Main with a folder, then on to the elevator.
-  { kind: 'handedBack', agentId: EXPLORE, reason: 'answer', report: REPORT, at: at(118) },
+  {
+    kind: 'handedBack',
+    agentId: EXPLORE,
+    reason: 'answer',
+    report: REPORT,
+    usage: { tokens: 41_200, reused: 33_900, model: 'claude-haiku-5-5' },
+    at: at(118),
+  },
 ]
 
 // A moment 0.6 seconds after the Researcher set off with its report, while that walk is still under way.

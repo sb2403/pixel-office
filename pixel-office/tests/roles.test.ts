@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { COORDINATOR, asName, humanize, roleFor } from '../hooks/roles'
+import { COORDINATOR, asName, humanize, modelName, roleFor, tokenCount } from '../hooks/roles'
 
 test('the built-in kinds of agent have job titles a person would use', async () => {
   expect(roleFor('Explore').title).toBe('Researcher')
@@ -29,4 +29,18 @@ test('a name the engine gave reads as a name', async () => {
   expect(asName('scout')).toBe('Scout')
   expect(asName('Alice')).toBe('Alice')
   expect(asName('')).toBe('')
+})
+
+test('a model id reads as the model people know', async () => {
+  expect(modelName('claude-haiku-5-5')).toBe('Haiku 5.5')
+  expect(modelName('claude-opus-5-5')).toBe('Opus 5.5')
+  expect(modelName('claude-sonnet-4-5-20250929')).toBe('Sonnet 4.5')
+  expect(modelName('claude-fable-5-1')).toBe('Fable 5.1')
+  expect(modelName('claude-3-5-haiku-20241022')).toBe('Haiku')
+  expect(modelName('us.anthropic.claude-sonnet-4-20250514-v1:0')).toBe('Sonnet 4')
+  expect(modelName('some-other-model')).toBe('some-other-model')
+})
+
+test('token counts are short', async () => {
+  expect([850, 3400, 3000, 38_400, 999_499, 1_250_000, 2_000_000].map(tokenCount)).toEqual(['850', '3.4k', '3k', '38k', '999k', '1.3M', '2M'])
 })

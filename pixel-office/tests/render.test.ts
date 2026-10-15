@@ -79,7 +79,7 @@ describe('renderOffice', () => {
   })
 
   test('a departing agent hides when its walk ends and is gone after', async () => {
-    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 2000 })
+    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', usage: null, at: 2000 })
     const goneAt = s.agents.a1!.goneAt!
     expect(groupOf(renderOffice(s, 2001), 'a1')).toContain('<set attributeName="visibility" to="hidden"')
     expect(renderOffice(s, goneAt + 1).includes('id="agent-a1"')).toBe(false)
@@ -145,6 +145,7 @@ describe('renderOffice', () => {
       agentId: 'a1',
       reason: 'answer',
       report: 'done',
+      usage: null,
       at: 20_000,
     })
     const until = s.agents.a1!.carry!.until
@@ -201,7 +202,7 @@ describe('a scene saved by an older version', () => {
   })
 
   test('draws and lists without a missing field getting in the way', async () => {
-    const s = aged(reduce(run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 5000 }))
+    const s = aged(reduce(run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', usage: null, at: 5000 }))
     expect(() => renderOffice(s, 5100)).toThrow()
     const whole = restore(s)
     expect(renderOffice(whole, 5100)).toContain('id="agent-a1"')
@@ -226,10 +227,10 @@ describe('labels', () => {
     const rows = orgRows(s)
     expect(rows[0]).toEqual({ id: MAIN, depth: 0, label: 'Main', status: 'coordinating', now: 'waiting on Researcher' })
     expect(rows[1]).toEqual({ id: 'a1', depth: 1, label: 'Researcher', status: 'working', now: 'reading x.ts' })
-    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 9000 })
+    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', usage: null, at: 9000 })
     expect(orgRows(done)[0]).toMatchObject({ status: 'working', now: 'thinking' })
     expect(orgRows(done)[1]).toMatchObject({ status: 'done', now: 'handed in its report' })
-    const stopped = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', at: 9000 })
+    const stopped = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', usage: null, at: 9000 })
     expect(orgRows(stopped)[1]).toMatchObject({ status: 'done', now: 'was stopped' })
   })
 
@@ -246,7 +247,7 @@ describe('labels', () => {
       at: 2,
     })
     expect(orgRows(held)[0]).toMatchObject({ status: 'waiting', now: 'waiting for your permission' })
-    const resting = run([{ kind: 'turnStarted', isContinuation: false, at: 1 }, { kind: 'turnEnded', at: 2 }])
+    const resting = run([{ kind: 'turnStarted', isContinuation: false, at: 1 }, { kind: 'turnEnded', usage: null, at: 2 }])
     expect(orgRows(resting)[0]).toMatchObject({ status: 'idle', now: 'ready for your next message' })
   })
 
@@ -254,7 +255,7 @@ describe('labels', () => {
     const events: OfficeEvent[] = []
     for (let i = 0; i < 14; i++) {
       events.push(spawnEv(`old${i}`, 1000 + i))
-      events.push({ kind: 'handedBack', agentId: `old${i}`, reason: 'answer', report: '', at: 2000 + i })
+      events.push({ kind: 'handedBack', agentId: `old${i}`, reason: 'answer', report: '', usage: null, at: 2000 + i })
     }
     events.push(spawnEv('fresh', 3000), readEv('fresh', 'x.ts', 3100))
     const rows = orgRows(run(events))
@@ -310,8 +311,23 @@ describe('labels', () => {
     expect(agentDetails(s, 'nobody', 66_000)).toEqual([])
   })
 
+  test('details say what the work cost, once it is known, and keep it out of the drawing', async () => {
+    const s = reduce(run([spawnEv('a1', 1000)]), {
+      kind: 'handedBack',
+      agentId: 'a1',
+      reason: 'answer',
+      report: 'done',
+      usage: { tokens: 38_400, reused: 31_200, model: 'claude-haiku-5-5' },
+      at: 9000,
+    })
+    expect(agentDetails(s, 'a1', 10_000)).toContain('Used: 38k tokens (31k reused) on Haiku 5.5')
+    expect(agentDetails(run([spawnEv('a1', 1000)]), 'a1', 2000).some(line => line.startsWith('Used'))).toBe(false)
+    const svg = renderOffice(s, 9100)
+    expect(svg.includes('38k tokens')).toBe(false)
+  })
+
   test('details show the report a helper handed back, and how its boss works with it', async () => {
-    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'Sessions start in auth.ts', at: 9000 })
+    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'Sessions start in auth.ts', usage: null, at: 9000 })
     expect(agentDetails(s, 'a1', 10_000)).toContain('Report: Sessions start in auth.ts')
     expect(agentDetails(s, 'a1', 10_000)).toContain('Now: handed in its report')
     const alongside = run([{ ...spawnEv('a1', 1000), isBackground: true } as OfficeEvent])
@@ -327,6 +343,7 @@ describe('labels', () => {
       agentId: 'a1',
       reason: 'answer',
       report: 'Sessions start in auth.ts',
+      usage: null,
       at: 20_000,
     })
     const goneAt = s.agents.a1!.goneAt!

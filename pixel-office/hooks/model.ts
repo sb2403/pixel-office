@@ -1,4 +1,4 @@
-import type { Agent, Carry, OfficeEvent, Outcome, Point, Scene, StationId, Walk } from '../types'
+import type { Agent, Carry, OfficeEvent, Outcome, Point, Scene, StationId, Usage, Walk } from '../types'
 import { allBackLine, narrate } from './narrate'
 import { COORDINATOR, asName, roleFor } from './roles'
 import { lookFor } from './sprites'
@@ -37,6 +37,7 @@ export function emptyScene(): Scene {
     brief: '',
     report: '',
     outcome: null,
+    usage: null,
     isTeammate: false,
     isBackground: false,
     phase: 'idle',
@@ -67,6 +68,7 @@ const AGENT_DEFAULTS = (agent: Agent): Partial<Agent> => ({
   // Nothing says its boss waits on it, so it never makes its boss look busy.
   isBackground: true,
   carry: null,
+  usage: null,
 })
 const AGENT_KEYS = Object.keys(AGENT_DEFAULTS({ type: MAIN } as Agent)) as (keyof Agent)[]
 
@@ -217,6 +219,7 @@ function arrive(scene: Scene, id: string, type: string, label: string, at: numbe
     brief: '',
     report: '',
     outcome: null,
+    usage: null,
     isTeammate: false,
     isBackground: true,
     phase: 'arriving',
@@ -423,10 +426,17 @@ function turnStarted(scene: Scene, ev: Ev<'turnStarted'>): Scene {
 
 // Main's turn is over: it rests where it stands until the next message. No walk; the sweep takes it
 // home after a short while and to the break room after a long one.
+// A teammate or a called-back helper works more than one turn, and Main works one per message: their costs add up.
+export function addUsage(sum: Usage | null, more: Usage | null): Usage | null {
+  if (more === null) return sum
+  if (sum === null) return more
+  return { tokens: sum.tokens + more.tokens, reused: sum.reused + more.reused, model: more.model }
+}
+
 function turnEnded(scene: Scene, ev: Ev<'turnEnded'>): Scene {
   const main = scene.agents[MAIN]
   if (main === undefined) return scene
-  const s = put(scene, { ...main, phase: 'idle', activity: null, lastEventAt: ev.at })
+  const s = put(scene, { ...main, phase: 'idle', activity: null, usage: addUsage(main.usage, ev.usage), lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }
 
@@ -464,7 +474,7 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
     next = { ...moved, phase: 'gone', goneAt: ev.at + (moved.walk?.durationMs ?? 0) }
   }
   const awaitedBy = isParentHere && waitingOn(scene, parent.id).some(a => a.id === agent.id) ? parent : undefined
-  let s = put(scene, { ...next, activity: null, report: ev.report, outcome, lastEventAt: ev.at })
+  let s = put(scene, { ...next, activity: null, report: ev.report, outcome, usage: addUsage(agent.usage, ev.usage), lastEventAt: ev.at })
   if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at)
   s = prune(s)
   s = withLine(s, ev.at, narrate(s, ev))

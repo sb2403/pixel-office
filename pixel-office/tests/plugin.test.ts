@@ -196,6 +196,16 @@ test('a helper that is called back after leaving comes back instead of being hir
   expect(Object.keys(scene()?.agents ?? {})).toHaveLength(2)
 })
 
+test("a helper's tokens and model come from its hand-back", async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  const usage = { input_tokens: 2000, output_tokens: 1500, cache_read_input_tokens: 30_000, cache_creation_input_tokens: 4000, model: 'claude-haiku-5-5' }
+  await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer', usage })
+  await clock.advance(FLUSH)
+  expect(scene()?.agents['agent-1']?.usage).toEqual({ tokens: 37_500, reused: 30_000, model: 'claude-haiku-5-5' })
+})
+
 test('a helper hired in the background leaves its boss free', async ($, on) => {
   const { clock, scene } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
