@@ -218,6 +218,20 @@ Raise `version` in `pixel-office/.claude-plugin/plugin.json`, commit, and push. 
 - Cost: it uses no model tokens. The only thing that enters your conversation is the one-line reply to `/office`.
 - Privacy: it reads tool names, file names, commands and the descriptions Claude gives them, search patterns, web hosts, message summaries, the task descriptions helpers are given, each helper's brief and report (up to 2,000 characters each for the ten most recently finished helpers, 200 for older ones), and the start of each message you send (up to 120 characters, to name the job), inside your own Claude Code, only to draw the office. It keeps them in the session's own state and sends nothing anywhere. With `history` set to `last-20` it also keeps a short record of each job on this computer across sessions, as described under Commands and options; it is off unless you switch it on.
 
+## Keeping Main a coordinator (coordinator-guard)
+
+Pixel Office only shows who coordinates; it does not make Main do it. `coordinator-guard` is a second, optional plugin in this repository that does. It is **off until you switch it on**, for the session:
+
+| Command | What it does |
+| --- | --- |
+| `/coordinator on` | Main is refused when it tries to change a file itself, and told to hire a helper with the Agent tool. |
+| `/coordinator off` | Main may edit again. |
+| `/coordinator` or `/coordinator status` | Says whether it is on. |
+
+While it is on, Main is refused `Edit`, `Write` and `NotebookEdit`, and shell commands that write a file: a redirect (`> out`, `>> log`), `tee`, an in-place edit (`sed -i`, `perl -i`), PowerShell's `Set-Content`, `Add-Content` and `Out-File`, and `git apply` or `patch`. Main can still read, search, run tests and git, hire helpers, and write to its own memory, plans and scratch folders. A helper is never held to it: only the main loop is. It cannot see what a script does, so `python script.py` that writes a file gets through; it is a nudge towards delegating, not a lock, and if the guard itself fails the call goes ahead.
+
+Install it with the same marketplace: `claude plugin install coordinator-guard@pixel-office`.
+
 ## Develop
 
 From the repository root:
@@ -230,7 +244,7 @@ claude plugin validate --strict pixel-office
 
 `plugin test` needs Claude Code 2.1.295 or newer. The desktop app runs its own copy of Claude Code, which can be newer than the `claude` on your PATH; the mod is loaded by the desktop app's copy, so judge a `claude plugin list` failure from an older terminal install with that in mind (the desktop copy lives under `%APPDATA%\Claude\claude-code` on Windows). `validate .` checks the marketplace file. `validate --strict` checks the mod and treats warnings as errors; it passes on this tree.
 
-GitHub runs the same three commands on every pull request and push, on Claude Code 2.1.295 (the oldest version this README promises) and on the newest release, and again every Monday so a Claude Code release that breaks the mod shows up before anyone reports it. It also draws the README pictures again and fails if they no longer match the drawing code: after changing what the office draws, run `npx -y tsx@4.19.2 scripts/render-preview.ts` and commit `docs/images`.
+GitHub runs the same three commands, and the guard's tests and validation, on every pull request and push, on Claude Code 2.1.295 (the oldest version this README promises) and on the newest release, and again every Monday so a Claude Code release that breaks the mod shows up before anyone reports it. It also draws the README pictures again and fails if they no longer match the drawing code: after changing what the office draws, run `npx -y tsx@4.19.2 scripts/render-preview.ts` and commit `docs/images`.
 
 Type-checking stays a local step, because the API declarations it needs are only written out by a running Claude Code session. Load the `plugin-authoring` skill in a session, take the `claude-code.d.ts` path it names, and point a `tsconfig` at it with `pixel-office/hooks`, `pixel-office/types` and `pixel-office/tests` included; the spec's plan has the full file. `tsconfig.typecheck.json` is ignored by git for that reason.
 

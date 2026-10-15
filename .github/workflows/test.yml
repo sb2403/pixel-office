@@ -34,6 +34,10 @@ jobs:
         run: claude plugin test pixel-office
       - name: Validate the mod
         run: claude plugin validate --strict pixel-office
+      - name: Run the coordinator guard's tests
+        run: claude plugin test coordinator-guard
+      - name: Validate the coordinator guard
+        run: claude plugin validate --strict coordinator-guard
       - name: Validate the marketplace
         run: claude plugin validate .
 

@@ -1,7 +1,8 @@
 {
   "name": "coordinator-guard",
-  "version": "0.1.0",
-  "description": "Keeps the main agent a coordinator: it may read, search and hire helpers, but file edits are left to them",
+  "version": "0.2.0",
+  "description": "An opt-in switch (/coordinator on|off) that keeps the main agent a coordinator: it may read, search and hire helpers, but file changes are left to them",
+  "types": "./types/index.d.ts",
   "author": { "name": "Spencer Barrett" },
   "license": "MIT"
 }
