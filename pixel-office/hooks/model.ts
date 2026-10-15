@@ -23,7 +23,7 @@ export const FULL_KEEP = 10
 export const LINGER_MS = 8_000
 export const IDLE_MS = 600_000
 export const BRIEFING_MAX_MS = 60_000
-export const WALK_SPEED = 120
+export const WALK_SPEED = 70
 
 type Ev<K extends OfficeEvent['kind']> = Extract<OfficeEvent, { kind: K }>
 type Stop = { point: Point; door: Point }
@@ -129,7 +129,7 @@ function freeSlot(scene: Scene, station: StationId, selfId: string): number {
   return slot
 }
 
-const walkMs = (length: number): number => clamp(Math.round((length / WALK_SPEED) * 1000), 400, 5000)
+const walkMs = (length: number): number => clamp(Math.round((length / WALK_SPEED) * 1000), 700, 7000)
 
 // Every walk drops whatever the agent was carrying, unless `item` says it carries something this time: it is
 // handed over when the walk reaches the first stop in `via`, the agent it is walking to.
