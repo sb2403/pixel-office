@@ -5,12 +5,11 @@ import type { OfficeEvent, Usage } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
 import { PANE, PANE_TITLE } from './state'
-import { WAITING_TOOLS, detailOf, gist, stationFor, targetOf, todoCounts } from './stations'
+import { WAITING_TOOLS, detailOf, fullText, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
-// How much of a helper's brief and of its report the office keeps: enough to see what was asked and answered.
-export const BRIEF_MAX = 200
-export const REPORT_MAX = 200
+// How much of a helper's brief and of its report the office keeps, to be read in full from its details box.
+export const TEXT_MAX = 2000
 const SWEEP_EVERY = 15
 const CLOCK_EVERY = 3
 const QUEUE_MAX = 500
@@ -20,6 +19,7 @@ const UNTRACKED = new Set(['Agent', 'Task'])
 const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
+const expandedAtom = atom({ plugin: 'pixel-office', key: 'expanded' } as const, null as 'brief' | 'report' | null)
 
 // A turn's token counts, summed over its requests (absent when nothing counted: an interrupt, an API error).
 const usageOf = (u: TurnUsage | undefined): Usage | null =>
@@ -134,6 +134,9 @@ export const register: Register = (on, options) => {
       await quietly(async () => {
         await update($, selectedAtom, () => null)
       })
+      await quietly(async () => {
+        await update($, expandedAtom, () => null)
+      })
     }
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -172,7 +175,7 @@ export const register: Register = (on, options) => {
         parentId: e.parentAgentId ?? MAIN,
         type: e.subagentType,
         description: e.description,
-        brief: gist(e.prompt, BRIEF_MAX),
+        brief: fullText(e.prompt, TEXT_MAX),
         name: e.name ?? null,
         isTeammate: e.isTeammate === true,
         isBackground: e.background === true,
@@ -195,7 +198,7 @@ export const register: Register = (on, options) => {
       const at = await $.clock.now()
       const usage = usageOf(e.usage)
       if (e.agentId !== undefined) {
-        push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, report: gist(e.answer, REPORT_MAX), usage, at })
+        push({ kind: 'handedBack', agentId: e.agentId, reason: e.reason, report: fullText(e.answer, TEXT_MAX), usage, at })
       } else push({ kind: 'turnEnded', usage, at })
     })
     return next(e)

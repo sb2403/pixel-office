@@ -284,6 +284,21 @@ describe('hand-backs and departures', () => {
     expect(back.agents.a1!.walk?.points[0]).toEqual(slotPoint('elevator', 0))
   })
 
+  test('only the most recently finished helpers keep their whole brief and report', async () => {
+    let s = emptyScene()
+    const long = 'word '.repeat(300)
+    for (let i = 0; i < 15; i++) {
+      s = reduce(s, spawn(`x${i}`, i * 10, { brief: long }))
+      s = reduce(s, { kind: 'handedBack', agentId: `x${i}`, reason: 'answer', report: long, usage: null, at: i * 10 + 5 })
+    }
+    const kept = (id: string) => s.agents[id]!.report.length
+    for (let i = 5; i < 15; i++) expect(kept(`x${i}`)).toBe(long.length)
+    for (let i = 0; i < 5; i++) {
+      expect(kept(`x${i}`)).toBeLessThanOrEqual(200)
+      expect(s.agents[`x${i}`]!.brief.length).toBeLessThanOrEqual(200)
+    }
+  })
+
   test('departed agents are pruned past 50', async () => {
     let s = emptyScene()
     for (let i = 0; i < 60; i++) {

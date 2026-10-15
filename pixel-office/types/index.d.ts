@@ -113,6 +113,13 @@ export type OfficeEvent =
 
 declare module 'claude-code' {
   interface PluginState {
-    'pixel-office': { scene: Scene; legendOpen: boolean; selected: string | null; clock: number }
+    'pixel-office': {
+      scene: Scene
+      legendOpen: boolean
+      selected: string | null
+      clock: number
+      // Which of the selected agent's texts the details box shows in full.
+      expanded: 'brief' | 'report' | null
+    }
   }
 }

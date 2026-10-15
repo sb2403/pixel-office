@@ -178,7 +178,8 @@ test('a subagent works, hands back and leaves', async ($, on) => {
   ])
   expect(value?.agents['agent-1']?.phase).toBe('gone')
   expect(value?.agents['agent-1']?.report).toBe('found it')
-  expect(value?.agents['agent-1']?.brief).toBe('Task Find where the login flow creates a session.')
+  // The whole brief is kept as written; the details box shows it as one line.
+  expect(value?.agents['agent-1']?.brief).toBe('## Task\nFind where the **login** flow creates a session.')
 })
 
 test('a helper that is called back after leaving comes back instead of being hired again', async ($, on) => {
@@ -419,6 +420,30 @@ test('pressing an agent in the org chart shows and hides its details', async ($,
   expect(await ui.find({ type: 'Text', text: /^Reports to: Main, who waits for its report$/ })).toBeDefined()
   await ui.press({ key: 'agent-agent-1' })
   expect(await ui.find({ type: 'Text', text: /^Job: find auth code$/ })).toBeUndefined()
+})
+
+test('a long brief and report can be read in full from the details box', async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  const brief = `## Task\n${'Look in every file that touches the session. '.repeat(10)}\n\n- auth.ts\n- session.ts`
+  await $.agent.spawn({ ...SPAWN, prompt: brief })
+  await $.turn.complete({ answer: 'Short answer.', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'agent-agent-1' })
+  expect(await ui.find({ type: 'Text', text: /^Brief: Task Look in every file/ })).toBeDefined()
+  // A report the one line already shows whole offers nothing more.
+  expect(await ui.find({ type: 'Text', text: /^Report: Short answer\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Read the full report/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
+  await ui.press({ key: 'read-brief' })
+  const whole = await ui.find({ type: 'Markdown' })
+  expect(whole?.props.text).toBe(brief)
+  expect(await ui.find({ type: 'Text', text: /Hide the full brief/ })).toBeDefined()
+  // Choosing another agent closes it.
+  await ui.press({ key: 'agent-main' })
+  await ui.press({ key: 'agent-agent-1' })
+  expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
 })
 
 test('the time on the job of a selected agent keeps counting', async ($, on) => {

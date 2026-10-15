@@ -1,5 +1,5 @@
 import type { Activity, OfficeEvent, Scene } from '../types'
-import { clip, stationFor } from './stations'
+import { gist, stationFor } from './stations'
 
 export const REPORT_IN_FEED = 60
 
@@ -91,7 +91,7 @@ function permissionFor(tool: string): string {
 }
 
 const quoted = (report: string): string => {
-  const excerpt = clip(report, REPORT_IN_FEED)
+  const excerpt = gist(report, REPORT_IN_FEED)
   return excerpt === '' ? '' : `: ${excerpt}`
 }
 

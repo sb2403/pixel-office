@@ -242,6 +242,18 @@ export function gist(text: string, max: number): string {
   return clip(text.replace(/^\s*#{1,6}\s+/gm, '').replace(/\*\*|__|`/g, ''), max)
 }
 
+// How long the one-line excerpt of a brief or a report is.
+export const EXCERPT = 200
+
+// Free text kept to be read in full (a brief, a report): line breaks stay, as Markdown needs them, and so do
+// tabs; every other control character goes, Windows line ends become plain ones, runs of blank lines shrink
+// to one, and it is cut to `max` characters by code point.
+export function fullText(text: string, max: number): string {
+  const lines = stripControls(text.replace(/\r\n?/g, '\n')).replace(/\n{3,}/g, '\n\n').trim()
+  const chars = Array.from(lines)
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : lines
+}
+
 // What a common command is for, in words: the fallback when Claude did not describe the command itself. Only
 // the first real step counts: a leading `cd somewhere &&`, variable settings, `sudo` and `npx` are skipped.
 const COMMANDS: ReadonlyArray<readonly [RegExp, string]> = [

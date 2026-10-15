@@ -3,10 +3,12 @@ import { allBackLine, narrate } from './narrate'
 import { COORDINATOR, asName, roleFor } from './roles'
 import { lookFor } from './sprites'
 import {
+  EXCERPT,
   WAITING_TOOLS,
   WIDTH,
   clamp,
   doorOf,
+  fullText,
   pathLength,
   pointAlong,
   route,
@@ -17,6 +19,7 @@ import {
 export const MAIN = 'main'
 export const TICKER_MAX = 8
 export const GONE_KEEP = 50
+export const FULL_KEEP = 10
 export const LINGER_MS = 8_000
 export const IDLE_MS = 600_000
 export const BRIEFING_MAX_MS = 60_000
@@ -449,6 +452,21 @@ function prune(scene: Scene): Scene {
   return { ...scene, agents, order: scene.order.filter(id => !drop.has(id)) }
 }
 
+// Only the most recently finished helpers keep their whole brief and report; older ones keep as much as the
+// one-line excerpt shows. That bounds the scene, which is written to state on every change.
+function trimTexts(scene: Scene): Scene {
+  const isLong = (a: Agent): boolean => a.brief.length > EXCERPT || a.report.length > EXCERPT
+  const old = Object.values(scene.agents)
+    .filter(a => a.phase === 'gone')
+    .sort((a, b) => (b.goneAt ?? 0) - (a.goneAt ?? 0))
+    .slice(FULL_KEEP)
+    .filter(isLong)
+  if (old.length === 0) return scene
+  const agents = { ...scene.agents }
+  for (const a of old) agents[a.id] = { ...a, brief: fullText(a.brief, EXCERPT), report: fullText(a.report, EXCERPT) }
+  return { ...scene, agents }
+}
+
 const OUTCOMES: Readonly<Record<Ev<'handedBack'>['reason'], Outcome>> = {
   answer: 'reported',
   aborted: 'stopped',
@@ -476,7 +494,7 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
   const awaitedBy = isParentHere && waitingOn(scene, parent.id).some(a => a.id === agent.id) ? parent : undefined
   let s = put(scene, { ...next, activity: null, report: ev.report, outcome, usage: addUsage(agent.usage, ev.usage), lastEventAt: ev.at })
   if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at)
-  s = prune(s)
+  s = trimTexts(prune(s))
   s = withLine(s, ev.at, narrate(s, ev))
   if (awaitedBy !== undefined && waitingOn(s, awaitedBy.id).length === 0) s = withLine(s, ev.at, allBackLine(awaitedBy.label))
   return s
