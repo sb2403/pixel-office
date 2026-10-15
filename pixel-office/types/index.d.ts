@@ -61,7 +61,10 @@ export type Agent = {
   look: Look
 }
 
-export type TickerLine = { at: number; text: string }
+// `routineOf` names the agent whose routine work the line reports (reading, editing, running a command): the
+// feed keeps only the latest of those per agent. It is null for the moments that make the story (a hire, a
+// hand-back, a message, a wait on you, an error), which are kept until newer lines push them out.
+export type TickerLine = { at: number; text: string; routineOf: string | null }
 
 export type Scene = {
   agents: Record<string, Agent>

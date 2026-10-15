@@ -99,10 +99,16 @@ const put = (scene: Scene, agent: Agent): Scene => ({ ...scene, agents: { ...sce
 
 const addAgent = (scene: Scene, agent: Agent): Scene => ({ ...put(scene, agent), order: [...scene.order, agent.id] })
 
-function withLine(scene: Scene, at: number, text: string | null): Scene {
+// A routine line replaces the same agent's last routine line, so a few busy helpers cannot push the story
+// (who hired whom, who reported back, who needs you) out of the feed within seconds.
+function withLine(scene: Scene, at: number, text: string | null, routineOf: string | null = null): Scene {
   if (text === null) return scene
-  return { ...scene, ticker: [...scene.ticker, { at, text }].slice(-TICKER_MAX) }
+  const kept = routineOf === null ? scene.ticker : scene.ticker.filter(line => line.routineOf !== routineOf)
+  return { ...scene, ticker: [...kept, { at, text, routineOf }].slice(-TICKER_MAX) }
 }
+
+// Tool calls that are part of the story rather than routine work: a message to another agent, and a wait on you.
+const isMilestone = (tool: string): boolean => tool === 'SendMessage' || WAITING_TOOLS.has(tool)
 
 function freeSlot(scene: Scene, station: StationId, selfId: string): number {
   const taken = new Set(
@@ -374,7 +380,7 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
     lastEventAt: ev.at,
   })
   if (wasBriefing) s = endBriefing(s, agent, ev.at)
-  return withLine(s, ev.at, narrate(s, ev))
+  return withLine(s, ev.at, narrate(s, ev), isMilestone(ev.tool) ? null : agent.id)
 }
 
 function toolEnded(scene: Scene, ev: Ev<'toolEnded'>): Scene {

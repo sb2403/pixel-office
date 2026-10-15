@@ -516,9 +516,36 @@ describe('review focus', () => {
 
   test('the ticker keeps only the last 8 lines', async () => {
     let s = emptyScene()
-    for (let i = 0; i < 20; i++) s = reduce(s, start(MAIN, 'Read', `f${i}.ts`, `c${i}`, i))
+    for (let i = 0; i < 20; i++) s = reduce(s, spawn(`h${i}`, i))
     expect(s.ticker).toHaveLength(8)
-    expect(lastLine(s)).toBe('Main is reading f19.ts')
+    expect(lastLine(s)).toBe('Main hired Researcher 20 and is waiting for its report: find auth code')
+  })
+
+  test('routine work keeps one line per agent, its latest, so busy helpers cannot push the story out', async () => {
+    let s = run([spawn('a1', 1000), spawn('a2', 1000, { type: 'Plan' }), spawn('a3', 1000, { type: 'general-purpose' })])
+    for (let i = 0; i < 10; i++) {
+      for (const id of ['a1', 'a2', 'a3']) s = reduce(s, start(id, 'Read', `${id}-${i}.ts`, `${id}-c${i}`, 2000 + i * 10))
+    }
+    expect(s.ticker.map(line => line.text)).toEqual([
+      'Main hired Researcher and is waiting for its report: find auth code',
+      'Main hired Planner and is waiting for its report: find auth code',
+      'Main hired Assistant and is waiting for its report: find auth code',
+      'Researcher is reading a1-9.ts',
+      'Planner is reading a2-9.ts',
+      'Assistant is reading a3-9.ts',
+    ])
+    // A message and an error are part of the story: more routine work does not remove them.
+    s = reduce(s, start('a1', 'SendMessage', 'Planner', 'm1', 3000, 'found the session code'))
+    s = reduce(s, start('a2', 'Bash', 'npm test', 'b1', 3100))
+    s = reduce(s, end('a2', 'b1', 3200, true))
+    s = reduce(s, start('a1', 'Read', 'last.ts', 'r1', 3300))
+    s = reduce(s, start('a2', 'Read', 'again.ts', 'r2', 3400))
+    const texts = s.ticker.map(line => line.text)
+    expect(texts).toContain('Researcher is messaging Planner: found the session code')
+    expect(texts).toContain('Planner hit an error')
+    expect(texts.filter(text => text.startsWith('Researcher is reading'))).toEqual(['Researcher is reading last.ts'])
+    expect(texts[texts.length - 1]).toBe('Planner is reading again.ts')
+    expect(s.ticker.find(line => line.text === 'Planner hit an error')?.routineOf).toBeNull()
   })
 
   test('events for unknown agents leave the scene alone', async () => {
