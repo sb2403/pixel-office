@@ -377,6 +377,8 @@ function findByName(scene: Scene, name: string, selfId: string): Agent | undefin
   )
 }
 
+const EDITING: ReadonlySet<string> = new Set(['Edit', 'Write', 'NotebookEdit'])
+
 function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
   let s = scene
   let agent = s.agents[ev.agentId]
@@ -417,6 +419,8 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
     lastEventAt: ev.at,
   })
   if (wasBriefing) s = endBriefing(s, agent, ev.at)
+  // The coordinator is meant to hire helpers for edits; the recap says how many it made itself.
+  if (agent.id === MAIN && EDITING.has(ev.tool) && s.job !== null) s = { ...s, job: { ...s.job, mainEdits: (s.job.mainEdits ?? 0) + 1 } }
   return withLine(s, ev.at, narrate(s, ev), isMilestone(ev.tool) ? null : agent.id)
 }
 
@@ -458,7 +462,7 @@ function turnStarted(scene: Scene, ev: Ev<'turnStarted'>): Scene {
   const job =
     ev.isContinuation && scene.job !== null
       ? { ...scene.job, endedAt: null }
-      : { startedAt: ev.at, endedAt: null, task: ev.task, mainUsage: null }
+      : { startedAt: ev.at, endedAt: null, task: ev.task, mainUsage: null, mainEdits: 0 }
   const s = put({ ...scene, job }, { ...moveTo(scene, main, 'office', ev.at), phase: 'working', lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }

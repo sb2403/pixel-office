@@ -12,6 +12,7 @@ import {
   isNight,
   orgRows,
   renderOffice,
+  sceneTimeOf,
   tagsBelow,
 } from '../hooks/render'
 import type { Agent, OfficeEvent, Scene } from '../types'
@@ -179,6 +180,22 @@ describe('renderOffice', () => {
     for (const a of row) expect(tagY(a.id)).toBe(below.has(a.id) ? '5.5' : '-14')
     // An agent on its own always has its tag over its head.
     expect(tagsBelow([s.agents.a1!], 60_000).size).toBe(0)
+  })
+
+  test('the picture does not change while nothing happens, so the desktop never draws it again', async () => {
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
+    const at = sceneTimeOf(s)
+    expect(at).toBe(1500)
+    // Walking is under way, yet one moment later (and a second after that) it is the same picture.
+    const first = renderOffice(s, at, undefined, 2000)
+    expect(renderOffice(s, at, undefined, 2350)).toBe(first)
+    expect(renderOffice(s, at, undefined, 3700)).toBe(first)
+    // Drawn as of the clock instead, it would be a new picture every time.
+    expect(renderOffice(s, 2350)).not.toBe(renderOffice(s, 3700))
+    // Something happening makes a new one.
+    const later = reduce(s, readEv('a1', 'login.ts', 4000))
+    expect(sceneTimeOf(later)).toBe(4000)
+    expect(renderOffice(later, sceneTimeOf(later), undefined, 4100)).not.toBe(first)
   })
 
   test('night and day differ', async () => {

@@ -33,6 +33,8 @@ export type Recap = {
   togetherMs: number
   peak: number
   tokens: number | null
+  // File edits Main made itself rather than through a helper.
+  mainEdits: number
 }
 
 // A helper belongs to the job it was hired (or called back) in. A called-back helper's tokens are all its work,
@@ -94,6 +96,7 @@ export function recapOf(scene: Scene, now: number): Recap | null {
     togetherMs: unionMs(helpers),
     peak: peakOf(helpers),
     tokens: counted.length === 0 ? null : counted.reduce((sum, l) => sum + (l.tokens ?? 0), 0),
+    mainEdits: job.mainEdits ?? 0,
   }
 }
 
@@ -162,6 +165,9 @@ export function recapSummary(recap: Recap): string[] {
       : `${recap.helpers} helper${recap.helpers === 1 ? '' : 's'}, up to ${recap.peak} at once`
   const cost = recap.tokens === null ? '' : ` · ${tokenCount(recap.tokens)} tokens`
   const lines = [recap.task === '' ? 'This job' : `This job: ${recap.task}`, `${took} · ${crew}${cost}`]
+  if (recap.mainEdits > 0) {
+    lines.push(`Main made ${recap.mainEdits} file edit${recap.mainEdits === 1 ? '' : 's'} itself${recap.helpers === 0 ? '' : ', not through a helper'}`)
+  }
   const ratio = speedUp(recap)
   if (ratio !== null) {
     lines.push(
