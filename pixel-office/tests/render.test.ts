@@ -1,7 +1,19 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { MAIN, emptyScene, reduce } from '../hooks/model'
-import { PUFF_MS, SVG_BUDGET, agentDetails, altText, clockLabel, escapeXml, isNight, orgRows, renderOffice } from '../hooks/render'
+import {
+  PUFF_MS,
+  STATUS_WORDS,
+  SVG_BUDGET,
+  agentDetails,
+  altText,
+  clockLabel,
+  escapeXml,
+  isNight,
+  orgRows,
+  renderOffice,
+  tagsBelow,
+} from '../hooks/render'
 import type { OfficeEvent, Scene } from '../types'
 
 const spawnEv = (id: string, at: number): OfficeEvent => ({
@@ -10,8 +22,10 @@ const spawnEv = (id: string, at: number): OfficeEvent => ({
   parentId: MAIN,
   type: 'Explore',
   description: 'find auth code',
+  brief: 'Find where the login flow creates a session',
   name: null,
   isTeammate: false,
+  isBackground: false,
   at,
 })
 const readEv = (id: string, target: string, at: number): OfficeEvent => ({
@@ -19,6 +33,7 @@ const readEv = (id: string, target: string, at: number): OfficeEvent => ({
   agentId: id,
   tool: 'Read',
   target,
+  detail: '',
   callId: `c-${id}`,
   at,
 })
@@ -63,7 +78,7 @@ describe('renderOffice', () => {
   })
 
   test('a departing agent hides when its walk ends and is gone after', async () => {
-    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', at: 2000 })
+    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 2000 })
     const goneAt = s.agents.a1!.goneAt!
     expect(groupOf(renderOffice(s, 2001), 'a1')).toContain('<set attributeName="visibility" to="hidden"')
     expect(renderOffice(s, goneAt + 1).includes('id="agent-a1"')).toBe(false)
@@ -110,9 +125,58 @@ describe('renderOffice', () => {
     const titles = [...svg.matchAll(/<title>([\s\S]*?)<\/title>/g)].map(m => m[1] ?? '')
     expect(titles.length).toBeGreaterThan(1)
     expect(titles.some(t => t.includes('On the job'))).toBe(false)
-    expect(titles.some(t => t.includes('Task: find auth code'))).toBe(true)
+    expect(titles.some(t => t.includes('Job: find auth code'))).toBe(true)
+    expect(titles.some(t => t.includes('Brief:'))).toBe(false)
     expect(renderOffice(s, 66_000)).toBe(renderOffice(s, 66_000))
     expect(renderOffice(s, 67_000)).toBe(svg)
+  })
+
+  test('a boss waiting on its helpers says who it is waiting on', async () => {
+    const one = run([{ kind: 'turnStarted', isContinuation: false, at: 500 }, spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    expect(groupOf(renderOffice(one, 60_000), MAIN)).toContain('>waiting on Researcher</text>')
+    const two = reduce(one, spawnEv('a2', 1200))
+    expect(groupOf(renderOffice(reduce(two, readEv('a2', 'b.ts', 1300)), 60_000), MAIN)).toContain('>waiting on 2</text>')
+  })
+
+  test('a helper carries its report to its boss and hands it over on the way out', async () => {
+    const s = reduce(run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)]), {
+      kind: 'handedBack',
+      agentId: 'a1',
+      reason: 'answer',
+      report: 'done',
+      at: 20_000,
+    })
+    const until = s.agents.a1!.carry!.until
+    const group = groupOf(renderOffice(s, 20_001), 'a1')
+    expect(group).toContain('#fac775')
+    expect(group).toContain(`<set attributeName="visibility" to="hidden" begin="${until - 20_001}ms"/>`)
+    // Once it is handed over the folder is no longer drawn.
+    expect(groupOf(renderOffice(s, until + 1), 'a1').includes(`begin="${until - 20_001}ms"`)).toBe(false)
+  })
+
+  test('neighbours whose name tags would collide get one over the head and one under the feet', async () => {
+    // Main sits between the two helpers it is briefing, its tag right where theirs reach.
+    const s = run([spawnEv('a1', 1000), spawnEv('a2', 1000)])
+    const row = [MAIN, 'a1', 'a2'].map(id => s.agents[id]!)
+    expect(new Set(row.map(a => a.pos.y)).size).toBe(1)
+    const below = tagsBelow(row, 60_000)
+    expect(below.size).toBeGreaterThan(0)
+    // No two tags on the same line cover each other by more than the width of their outline.
+    const span = (a: (typeof row)[number]) => [a.pos.x - a.label.length * 1.05, a.pos.x + a.label.length * 1.05] as const
+    for (const [i, a] of row.entries()) {
+      for (const b of row.slice(i + 1)) {
+        if (below.has(a.id) !== below.has(b.id)) continue
+        const [a0, a1] = span(a)
+        const [b0, b1] = span(b)
+        expect(Math.min(a1, b1) - Math.max(a0, b0)).toBeLessThanOrEqual(1)
+      }
+    }
+    // The drawing puts each tag where it was placed.
+    const svg = renderOffice(s, 60_000)
+    const tagY = (id: string): string | undefined => /<text x="0" y="([-\d.]+)" font-size="3.5"/.exec(groupOf(svg, id))?.[1]
+    for (const a of row) expect(tagY(a.id)).toBe(below.has(a.id) ? '5.5' : '-14')
+    // An agent on its own always has its tag over its head.
+    expect(tagsBelow([s.agents.a1!], 60_000).size).toBe(0)
   })
 
   test('night and day differ', async () => {
@@ -122,20 +186,40 @@ describe('renderOffice', () => {
 })
 
 describe('labels', () => {
-  test('org rows nest subagents under their parent', async () => {
+  test('org rows nest subagents under their parent and say what each is doing', async () => {
     const s = run([spawnEv('a1', 1000), readEv('a1', 'x.ts', 1100)])
     const rows = orgRows(s)
-    expect(rows[0]).toEqual({ id: MAIN, depth: 0, label: 'Main', status: 'working', place: 'Corner office' })
-    expect(rows[1]).toEqual({ id: 'a1', depth: 1, label: 'Explore', status: 'working', place: 'Records library' })
-    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', at: 9000 })
-    expect(orgRows(done)[1]).toMatchObject({ status: 'done', place: 'left' })
+    expect(rows[0]).toEqual({ id: MAIN, depth: 0, label: 'Main', status: 'coordinating', now: 'waiting on Researcher' })
+    expect(rows[1]).toEqual({ id: 'a1', depth: 1, label: 'Researcher', status: 'working', now: 'reading x.ts' })
+    const done = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 9000 })
+    expect(orgRows(done)[0]).toMatchObject({ status: 'working', now: 'thinking' })
+    expect(orgRows(done)[1]).toMatchObject({ status: 'done', now: 'handed in its report' })
+    const stopped = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'aborted', report: '', at: 9000 })
+    expect(orgRows(stopped)[1]).toMatchObject({ status: 'done', now: 'was stopped' })
+  })
+
+  test('the panel tells waiting on you apart from waiting on helpers', async () => {
+    expect(STATUS_WORDS.waiting).toBe('needs you')
+    expect(STATUS_WORDS.coordinating).toBe('coordinating')
+    const asked = run([{ kind: 'toolStarted', agentId: MAIN, tool: 'AskUserQuestion', target: '', detail: '', callId: 'q', at: 1 }])
+    expect(orgRows(asked)[0]).toMatchObject({ status: 'waiting', now: 'waiting for you to answer a question' })
+    // A command held at a permission prompt has not run yet.
+    const held = reduce(run([{ kind: 'toolStarted', agentId: MAIN, tool: 'Bash', target: 'rm -rf build', detail: '', callId: 'b', at: 1 }]), {
+      kind: 'waiting',
+      agentId: MAIN,
+      tool: 'Bash',
+      at: 2,
+    })
+    expect(orgRows(held)[0]).toMatchObject({ status: 'waiting', now: 'waiting for your permission' })
+    const resting = run([{ kind: 'turnStarted', isContinuation: false, at: 1 }, { kind: 'turnEnded', at: 2 }])
+    expect(orgRows(resting)[0]).toMatchObject({ status: 'idle', now: 'ready for your next message' })
   })
 
   test('live agents are listed before finished ones, so a trimmed chart keeps them', async () => {
     const events: OfficeEvent[] = []
     for (let i = 0; i < 14; i++) {
       events.push(spawnEv(`old${i}`, 1000 + i))
-      events.push({ kind: 'handedBack', agentId: `old${i}`, reason: 'answer', at: 2000 + i })
+      events.push({ kind: 'handedBack', agentId: `old${i}`, reason: 'answer', report: '', at: 2000 + i })
     }
     events.push(spawnEv('fresh', 3000), readEv('fresh', 'x.ts', 3100))
     const rows = orgRows(run(events))
@@ -172,17 +256,34 @@ describe('labels', () => {
     expect(escapeXml('a😀b')).toBe('a😀b')
   })
 
-  test('agent details say who, what, for whom and for how long', async () => {
+  test('agent details say who, what kind, what job, what now, for whom and for how long', async () => {
     const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
     expect(agentDetails(s, 'a1', 66_000)).toEqual([
-      'Explore (Explore)',
-      'Task: find auth code',
-      'Doing: Read auth.ts',
-      'Reports to: Main',
+      'Researcher · Explore agent',
+      'Reads and searches, then reports what it found. Changes nothing',
+      'Job: find auth code',
+      'Brief: Find where the login flow creates a session',
+      'Now: reading auth.ts',
+      'Reports to: Main, who waits for its report',
       'On the job: 1m 5s',
     ])
-    expect(agentDetails(s, MAIN, 66_000)[0]).toBe('Main (your main agent)')
+    expect(agentDetails(s, MAIN, 66_000)).toEqual([
+      'Main · Coordinator',
+      'Talks with you, splits the work into jobs, hires helpers and puts their reports together',
+      'Now: waiting on Researcher',
+    ])
     expect(agentDetails(s, 'nobody', 66_000)).toEqual([])
+  })
+
+  test('details show the report a helper handed back, and how its boss works with it', async () => {
+    const s = reduce(run([spawnEv('a1', 1000)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: 'Sessions start in auth.ts', at: 9000 })
+    expect(agentDetails(s, 'a1', 10_000)).toContain('Report: Sessions start in auth.ts')
+    expect(agentDetails(s, 'a1', 10_000)).toContain('Now: handed in its report')
+    const alongside = run([{ ...spawnEv('a1', 1000), isBackground: true } as OfficeEvent])
+    expect(agentDetails(alongside, 'a1', 2000)).toContain('Reports to: Main, who keeps working meanwhile')
+    const named = run([{ ...spawnEv('t1', 1000), name: 'scout', isTeammate: true, isBackground: true } as OfficeEvent])
+    expect(agentDetails(named, 't1', 2000).slice(0, 1)).toEqual(['Scout · Researcher (Explore agent)'])
+    expect(agentDetails(named, 't1', 2000)).toContain('Reports to: Main, who leads the team')
   })
 
   test("a finished helper's time on the job stops counting when it leaves", async () => {
@@ -190,6 +291,7 @@ describe('labels', () => {
       kind: 'handedBack',
       agentId: 'a1',
       reason: 'answer',
+      report: 'Sessions start in auth.ts',
       at: 20_000,
     })
     const goneAt = s.agents.a1!.goneAt!

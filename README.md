@@ -1,10 +1,10 @@
 # Pixel Office
 
-A Claude Code mod that draws a live pixel-art office in the Claude desktop app. Every agent in the session is a character: Main works from the corner office, subagents arrive by elevator, get briefed in the meeting room, walk to the station that matches the tool they are using, hand their report back and leave.
+A Claude Code mod that draws a live pixel-art office in the Claude desktop app. Every agent in the session is a character with a job title. Main is the coordinator: it talks with you, splits big jobs into parts and hires helpers for them. Helpers arrive by elevator, get briefed in the meeting room, walk to the station that matches the tool they are using, carry their report back to whoever hired them and leave. You can see who is waiting on whom, what each one was asked to do, and what each one found.
 
-<img src="docs/images/office.svg" alt="The Pixel Office, a pixel-art floor plan. Main works at its desk in the corner office with a speech bubble that reads notes.md. An Explore helper and a Plan helper stand in the records library with bubbles reading auth.ts and session. A third helper runs npm test in the server room. A fourth helper is walking in to the meeting room, where the whiteboard reads fix the login bug." width="100%">
+<img src="docs/images/office.svg" alt="The Pixel Office, a pixel-art floor plan. Main sits in the corner office with a speech bubble that reads waiting on 2. The Planner stands in the records library with a bubble reading session.ts. The Researcher walks across the floor carrying a yellow folder, its report, back to Main. In the meeting room the Assistant sits beside a new helper, Researcher 2, with a bubble reading waiting on Researcher 2, and the whiteboard reads find why a test fails." width="100%">
 
-The picture above is the mod's own drawing of a made-up session, and it is animated: Main is writing notes in the corner office, three helpers are at work, and a fourth is walking in to be briefed. To try it yourself, jump to [Install](#install).
+The picture above is the mod's own drawing of a made-up session, and it is animated. Main hired three helpers at once and is coordinating: its bubble says it is waiting on two of them. The Researcher has finished and is carrying its report to Main. The Assistant found a failing test and hired a helper of its own, so it is coordinating too, from the meeting room. To try it yourself, jump to [Install](#install).
 
 ## A tour of the office
 
@@ -14,44 +14,67 @@ Each label names a zone. An agent walks to the zone that matches the tool it is 
 
 | Zone | Stands for | What you see there |
 |---|---|---|
-| Corner office | Main's home base; thinking between tools | Main sits here and goes back after every errand. Main's own edits and writes happen at this desk too. |
+| Corner office | Main's home base: thinking, or coordinating its helpers | Main sits here and goes back after every errand. Main's own edits and writes happen at this desk too. While it waits on helpers, its bubble says who: "waiting on Researcher", or "waiting on 3". |
 | Desks | Edit, Write, NotebookEdit | Eight desks. Each helper gets its own and returns to it between jobs. |
 | Records library | Read, Grep, Glob, LSP, Skill, ToolSearch | Looking things up: reading files and searching code. |
 | Phone booths | WebFetch, WebSearch | Going out to the web. A booth light comes on while someone is on a call. |
 | Mailroom | Outside services (`mcp__` tools) | Calling connected services. A parcel appears in the pigeonholes while someone is there. |
 | Server room | Bash, PowerShell, background shells | Running commands. The rack lights flash while a command runs. |
-| Meeting room | Briefings, SendMessage | A new helper is briefed here, and the whiteboard shows what it was hired to do. When one agent messages another, the sender walks over to the recipient, or comes here if it cannot find them. |
+| Meeting room | Briefings, SendMessage | A new helper is briefed here, and the whiteboard shows what it was hired to do. When one agent messages another, the sender carries an envelope over to the recipient, or comes here if it cannot find them. |
 | Task board | TodoWrite, Task tools, plan updates | A cork board on the wall. Green notes are done, amber notes are still open. |
 | Reception | Waiting on you: questions, permissions, plan approval | A blinking "!" bubble means this agent cannot go on until you answer. |
 | Elevator | Agents arrive and leave | Helpers step out of it when they are hired and step back in when they finish. |
 | Break room | Idle agents, and Main between turns after a while | Where anyone with nothing to do goes to rest. |
 
+## Who's on the team
+
+Every helper is named for the job its kind of agent does, so you can tell what it can and cannot do at a glance. The name Claude Code uses for that kind of agent is in its details box.
+
+| In the office | Claude Code calls it | What it does |
+|---|---|---|
+| Main, the Coordinator | the main agent | Talks with you, splits the work into jobs, hires helpers and puts their reports together. |
+| Researcher | `Explore` | Reads and searches, then reports what it found. Changes nothing. |
+| Planner | `Plan` | Works out a step-by-step plan for a job. Changes nothing. |
+| Assistant | `general-purpose` | Can read, edit and run commands to finish one job. |
+| Clone | `fork` | A copy of its boss that knows everything its boss knew, sent off to do a side job. |
+| Guide | `claude-code-guide` | Looks up how Claude Code itself works. |
+| Contractor | (unknown) | A helper the office did not see being hired. |
+
+Any other kind of agent is named after its type: a `code-reviewer` is a "Code reviewer". A helper the engine gave a name keeps it ("Scout"), and its details box adds the role. A second helper of the same kind is numbered, as in "Researcher 2".
+
+**How they work together.** A boss hires a helper in one of two ways, and the office shows which:
+
+- **And waits for the report.** The usual way. The feed says "Main hired Researcher and is waiting for its report". Until the reports come back, the boss is *coordinating*: it has nothing else in hand, so its speech bubble and its row say who it is waiting on. When the last one is back the feed says "Main has every report back and is reviewing the results".
+- **To work alongside it**, in the background. The boss carries on with its own work meanwhile.
+
+Helpers can hire helpers of their own, so a chain of delegation shows up as a deeper indent in the panel and as a second coordinator on the floor. Teammates (helpers started as part of a team) are standing colleagues rather than errands: nobody waits on them, and they rest in the break room between jobs.
+
 ## The life of a helper
 
 A helper is a subagent: a short-lived agent that Main (or another agent) hires for one job. In the picture it goes through these steps.
 
-1. **Hired.** Main hands over a one-line job description. The feed says who hired whom ("Main hired Explore: find the login code") and a new row appears in the org chart.
+1. **Hired.** Main hands over a one-line job description and a fuller brief. The feed says who hired whom and whether the boss is waiting ("Main hired Researcher and is waiting for its report: find the login code"), and a new row appears in the panel.
 2. **Arrives by elevator.** The elevator doors open and the helper steps out.
 3. **Briefed in the meeting room.** The helper walks to the meeting room and the whiteboard shows its objective, cut short if it is long. Its boss walks over to join it unless the boss is busy.
-4. **Works at stations.** Each time the helper uses a tool it walks to the matching station. A speech bubble above its head names the file, command, search or website, for example `auth.ts` or `npm test`.
-5. **Hands its report to its boss.** When it is done, the helper walks over to its boss to hand in the report.
-6. **Leaves by elevator.** The helper rides away and its row in the org chart turns grey and says "left". A teammate (a helper started as part of a team) goes to the break room instead of leaving, ready for its next job.
+4. **Works at stations.** Each time the helper uses a tool it walks to the matching station. A speech bubble above its head names the file, command, search or website, for example `auth.ts` or `npm test`. The feed says it in words: "Researcher is reading auth.ts", "Assistant is running a command to run the test suite" (Claude usually describes a command when it runs one, and the feed uses that description; without one, it says what a common command is for, or shows the command itself).
+5. **Carries its report to its boss.** When it is done, the helper walks over to its boss holding a yellow folder and hands it over. The feed quotes the start of the report, and the helper's details box keeps it.
+6. **Leaves by elevator.** The helper rides away and its row in the panel turns grey and says how the job ended: "handed in its report", "was stopped" or "ran into a problem". A teammate goes to the break room instead of leaving, ready for its next job.
 
 Two signs worth knowing. A red puff above a character means a tool call just hit an error. A blinking "!" bubble at reception means that agent is waiting on you, for a question, a permission or a plan to approve.
 
 ## Reading the panel
 
-<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who reports to whom lists Main and four helpers with their status and place, and a dim line under each helper with its objective. A details box for the Explore helper shows its task, what it is doing, who it reports to and how long it has been on the job. A Show legend button sits at the bottom." width="100%">
+<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Researcher 2, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report and how long it was on the job. A Show legend button sits at the bottom." width="100%">
 
 The numbers below match the numbers in the picture.
 
 1. **The office.** The animated picture. Every character has a name tag, and the speech bubble shows what it is doing right now.
 2. **What's happening.** A plain-English feed of the latest events, each with the time it happened. The newest line is at the bottom, and only the last eight are kept.
-3. **Who reports to whom.** The org chart. Indentation shows who reports to whom. Each row reads name, status, place: green for working, yellow for waiting on you, grey for idle or done. The dim line with an arrow under a helper is its objective, the job it was hired to do. Two helpers of the same kind are numbered, as in `general-purpose 2`. A long chart ends with a "+N more" line.
-4. **Details.** Click a name in the org chart to open its details: what kind of agent it is, its task, what it is doing now, who it reports to, and an "On the job" timer that counts up while it works. Click the name again to close the box.
+3. **Who's doing what.** The team, as an org chart: indentation shows who reports to whom. Each row reads name, status, and what it is doing right now in words ("reading session.ts", "waiting on Planner and Assistant"). Green is working, teal is coordinating (waiting on helpers), yellow is "needs you" (waiting on your answer or permission), grey is idle or done. The dim line with an arrow under a helper is its objective, the job it was hired to do. A long chart ends with a "+N more" line.
+4. **Details.** Click a name to open its details: its role and what that kind of agent does, its job, the start of the brief its boss wrote, what it is doing now, who it reports to and whether that boss is waiting on it, the start of its report once it has handed one in, and an "On the job" timer that counts up while it works. Click the name again to close the box.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 
-In a terminal session the pane shows the same feed and org chart as plain text, under a line telling you to open the session in the Claude desktop app to see the picture.
+In a terminal session the pane shows the same feed and team as plain text, under a line telling you to open the session in the Claude desktop app to see the picture.
 
 ## Requirements
 
@@ -124,6 +147,12 @@ Either way the new value applies to sessions you start afterwards. `claude plugi
 
 **Main is "idle" instead of "working"?** Main is working from the moment you send a message until it finishes its turn. A working Main with no speech bubble is thinking between tools, in the corner office. When the turn ends Main reads "idle" and stays where it stood. A few seconds later it walks back to the corner office.
 
+**Main says "coordinating"?** It hired helpers and is waiting for their reports, with nothing else in hand. Its bubble and its row name who it is waiting on. However long they take, a coordinating boss is never sent to the break room. Any helper that hires its own helpers coordinates the same way.
+
+**Someone is carrying a folder or an envelope?** A folder is a report on its way to the boss who asked for it; an envelope is a message on its way to another agent. Each disappears at the moment it is handed over.
+
+**A name tag is under someone's feet?** Two characters stand so close that their name tags would cover each other, as when a boss sits beside the helper it is briefing. One tag moves below the feet so both stay readable.
+
 **Someone is in the break room?** Anyone who has had nothing to do for 10 minutes goes there, Main included. Teammates also go there after they hand in a report. They walk back to work as soon as something happens.
 
 **An agent is called "Contractor"?** The office only learns about a helper when it sees it being hired. An agent that starts working without that appears at the elevator in a grey shirt, named Contractor, and reports to Main.
@@ -156,7 +185,7 @@ Raise `version` in `pixel-office/.claude-plugin/plugin.json`, commit, and push. 
 - It is built on an early-access mod API that may change between Claude Code releases, so a new release can need a new version of this mod.
 - An organization policy can disable mods. If yours does, the office will not load.
 - Cost: it uses no model tokens. The only thing that enters your conversation is the one-line reply to `/office`.
-- Privacy: it reads tool names, file names, commands, search patterns, web hosts and the short task descriptions helpers are given, inside your own Claude Code, only to draw the office. It sends nothing anywhere.
+- Privacy: it reads tool names, file names, commands and the descriptions Claude gives them, search patterns, web hosts, message summaries, the task descriptions helpers are given, and the first 200 characters of each helper's brief and of its report, inside your own Claude Code, only to draw the office. It keeps them in the session's own state and sends nothing anywhere.
 
 ## Develop
 

@@ -236,6 +236,54 @@ export function targetOf(tool: string, input: Record<string, unknown>): string {
   return ''
 }
 
+// A short, readable excerpt of free text (a brief, a report, a message): Markdown heading marks, bold and code
+// ticks dropped, everything on one line, cut to `max` characters.
+export function gist(text: string, max: number): string {
+  return clip(text.replace(/^\s*#{1,6}\s+/gm, '').replace(/\*\*|__|`/g, ''), max)
+}
+
+// What a common command is for, in words: the fallback when Claude did not describe the command itself. Only
+// the first real step counts: a leading `cd somewhere &&`, variable settings, `sudo` and `npx` are skipped.
+const COMMANDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^((npm|pnpm|yarn|bun)( run)? test|jest|vitest|mocha|pytest|(go|cargo|dotnet|deno) test|python3? -m (pytest|unittest)|claude plugin test)\b/, 'Test the code'],
+  [/^((npm|pnpm|bun) (install|i|ci|add)|yarn (install|add)|pip3? install|(uv|poetry) (add|install|sync)|cargo add|go get)\b|^yarn$/, 'Install packages'],
+  [/^((npm|pnpm|yarn|bun) run build|tsc|make|cargo build|go build)\b/, 'Build the project'],
+  [/^((npm|pnpm|yarn|bun) run (lint|format|typecheck)|eslint|prettier|ruff|black|biome)\b/, 'Check the code for mistakes'],
+  [/^git (status|diff|log|show)\b/, 'See what has changed'],
+  [/^git commit\b/, 'Save a checkpoint of the work'],
+  [/^git push\b/, 'Upload the work'],
+  [/^git (pull|fetch)\b/, 'Download the latest changes'],
+  [/^git clone\b/, 'Copy a project to work on'],
+  [/^git (checkout|switch|branch|merge|rebase)\b/, 'Work with branches'],
+  [/^(ls|dir|tree|find)\b/, 'Look through folders'],
+  [/^(cat|head|tail|less)\b/, 'Show a file'],
+  [/^(grep|rg|findstr)\b/, 'Search the files'],
+  [/^(curl|wget)\b/, 'Fetch something from the web'],
+  [/^mkdir\b/, 'Make a folder'],
+  [/^(rm|rmdir|del)\b/, 'Delete files'],
+  [/^(mv|move)\b/, 'Move files'],
+  [/^(cp|copy)\b/, 'Copy files'],
+]
+
+export function explainCommand(command: string): string {
+  const steps = command.split(/&&|\|\||;|\n/).map(step => step.split('|')[0]?.trim() ?? '')
+  const first = steps.find(step => step !== '' && !/^(cd|pushd|set|export)\b/.test(step)) ?? ''
+  const bare = first.replace(/^(\w+=\S*\s+)+/, '').replace(/^(sudo|npx|bunx|time)\s+/, '')
+  return COMMANDS.find(([pattern]) => pattern.test(bare))?.[1] ?? ''
+}
+
+// The plain-English gist of a call, from what Claude wrote into its input: the description it gives every
+// command (falling back to what the command is commonly for), or the summary of a message. Empty otherwise.
+export function detailOf(tool: string, input: Record<string, unknown>): string {
+  const str = (key: string): string => {
+    const value = input[key]
+    return typeof value === 'string' ? value : ''
+  }
+  if (tool === 'Bash' || tool === 'PowerShell') return gist(str('description'), 60) || explainCommand(str('command'))
+  if (tool === 'SendMessage') return gist(str('summary') || (str('message').split('\n')[0] ?? ''), 48)
+  return ''
+}
+
 export function todoCounts(input: Record<string, unknown>): { done: number; open: number } | null {
   const list = Array.isArray(input.todos) ? input.todos : Array.isArray(input.items) ? input.items : null
   if (list === null) return null

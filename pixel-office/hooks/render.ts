@@ -1,9 +1,11 @@
 import type { Agent, Scene, StationId } from '../types'
-import { MAIN, isWalkingAt, positionAt } from './model'
+import { MAIN, isCoordinating, isWalkingAt, positionAt, waitingOn } from './model'
+import { doing } from './narrate'
 import { OFFICE_DEFS, officeBase, officeDecor, rect } from './office'
-import { iconSvg, personSvg } from './sprites'
+import { roleFor } from './roles'
+import { iconSvg, itemSvg, personSvg } from './sprites'
 import type { Variant } from './sprites'
-import { HEIGHT, STATIONS, WIDTH, clamp, clip, splitAt, stripControls } from './stations'
+import { HEIGHT, STATIONS, WAITING_TOOLS, WIDTH, clamp, clip, splitAt, stripControls } from './stations'
 
 export const SVG_BUDGET = 120_000
 export const PUFF_MS = 2500
@@ -31,15 +33,26 @@ export function isNight(now: number): boolean {
   return hour < 7 || hour >= 19
 }
 
+// `now` says in plain words what the agent is doing at this moment, or how its job ended.
 export type OrgRow = {
   id: string
   depth: number
   label: string
-  status: 'working' | 'waiting' | 'idle' | 'done'
-  place: string
+  status: 'working' | 'coordinating' | 'waiting' | 'idle' | 'done'
+  now: string
 }
 
-export function statusOf(agent: Agent): OrgRow['status'] {
+// What each status reads as in the panel. `waiting` is always waiting on you; waiting on helpers is coordinating.
+export const STATUS_WORDS: Readonly<Record<OrgRow['status'], string>> = {
+  working: 'working',
+  coordinating: 'coordinating',
+  waiting: 'needs you',
+  idle: 'idle',
+  done: 'done',
+}
+
+export function statusOf(scene: Scene, agent: Agent): OrgRow['status'] {
+  if (isCoordinating(scene, agent)) return 'coordinating'
   switch (agent.phase) {
     case 'waiting':
       return 'waiting'
@@ -70,18 +83,44 @@ export function orgRows(scene: Scene): OrgRow[] {
     seen.add(id)
     const agent = scene.agents[id]
     if (agent === undefined) return
-    rows.push({
-      id,
-      depth,
-      label: agent.label,
-      status: statusOf(agent),
-      place: agent.phase === 'gone' ? 'left' : STATIONS[agent.station].name,
-    })
+    rows.push({ id, depth, label: agent.label, status: statusOf(scene, agent), now: nowOf(scene, agent) })
     for (const child of children.get(id) ?? []) visit(child, depth + 1)
   }
   visit(MAIN, 0)
   for (const id of scene.order) visit(id, 1)
   return rows
+}
+
+// "Researcher", "Researcher and Planner", "Researcher, Planner and Assistant", "4 helpers".
+function names(agents: readonly Agent[]): string {
+  const labels = agents.map(a => a.label)
+  if (labels.length > 3) return `${labels.length} helpers`
+  if (labels.length <= 1) return labels[0] ?? ''
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1] ?? ''}`
+}
+
+const ENDINGS = { reported: 'handed in its report', stopped: 'was stopped', failed: 'ran into a problem' } as const
+
+// What an agent is up to right now, in the words the feed uses: "reading auth.ts", "waiting on Researcher".
+export function nowOf(scene: Scene, agent: Agent): string {
+  if (agent.phase === 'gone') return agent.outcome === null ? 'left' : ENDINGS[agent.outcome]
+  if (isCoordinating(scene, agent)) return `waiting on ${names(waitingOn(scene, agent.id))}`
+  // A tool held at a permission prompt has not run yet: what the agent does now is wait for you.
+  if (agent.phase === 'waiting' && (agent.activity === null || !WAITING_TOOLS.has(agent.activity.tool))) {
+    return 'waiting for your permission'
+  }
+  if (agent.activity !== null) return doing(agent.activity)
+  switch (agent.phase) {
+    case 'arriving':
+      return 'arriving'
+    case 'briefing':
+      return 'being briefed'
+    case 'idle':
+      if (agent.station === 'breakroom') return 'on a break'
+      return agent.id === MAIN ? 'ready for your next message' : 'free for the next job'
+    default:
+      return 'thinking'
+  }
 }
 
 // The second line under a helper in the org chart: what it was hired to do, fitted to a column `width` wide.
@@ -105,18 +144,34 @@ export function altText(scene: Scene): string {
   return `Pixel office with ${here.length} ${noun}: ${here.map(a => `${a.label} at ${STATIONS[a.station].name}`).join(', ')}`
 }
 
+// Lines that only belong in the panel: the brief and the report are long, and the job clock ticks every second.
+const PANEL_ONLY = ['Brief:', 'Report:', 'On the job:']
+
+// The details box: who this is, what its kind of agent does, the job it was given, what it is doing, who it
+// works for and how that boss works with it, and what it handed back.
 export function agentDetails(scene: Scene, id: string, now: number): string[] {
   const agent = scene.agents[id]
   if (agent === undefined) return []
+  const role = roleFor(agent.type)
   const boss = agent.parentId === null ? undefined : scene.agents[agent.parentId]?.label
-  const lines = [agent.id === MAIN ? 'Main (your main agent)' : `${agent.label} (${agent.type})`]
-  if (agent.description !== '') lines.push(`Task: ${agent.description}`)
-  lines.push(
-    agent.activity !== null
-      ? `Doing: ${agent.activity.tool}${agent.activity.target === '' ? '' : ` ${agent.activity.target}`}`
-      : `Status: ${statusOf(agent)}`,
-  )
-  if (boss !== undefined) lines.push(`Reports to: ${boss}`)
+  if (agent.id === MAIN) return [`Main · ${role.title}`, role.blurb, `Now: ${nowOf(scene, agent)}`]
+  // "Researcher 2 · Explore agent" ties the office's name to the one Claude Code shows; a named agent also gets its role.
+  const isRoleName = agent.label === role.title || agent.label.startsWith(`${role.title} `)
+  const title =
+    agent.type === 'contractor'
+      ? agent.label
+      : isRoleName
+        ? `${agent.label} · ${agent.type} agent`
+        : `${agent.label} · ${role.title} (${agent.type} agent)`
+  const lines = [title, role.blurb]
+  if (agent.description !== '') lines.push(`Job: ${agent.description}`)
+  if (agent.brief !== '') lines.push(`Brief: ${agent.brief}`)
+  lines.push(`Now: ${nowOf(scene, agent)}`)
+  if (boss !== undefined) {
+    const how = agent.isTeammate ? 'leads the team' : agent.isBackground ? 'keeps working meanwhile' : 'waits for its report'
+    lines.push(`Reports to: ${boss}, who ${how}`)
+  }
+  if (agent.report !== '') lines.push(`Report: ${agent.report}`)
   if (agent.id !== MAIN) {
     // A helper that has left stops the clock where it left.
     const until = agent.phase === 'gone' && agent.goneAt !== null ? Math.min(now, agent.goneAt) : now
@@ -126,11 +181,14 @@ export function agentDetails(scene: Scene, id: string, now: number): string[] {
   return lines
 }
 
-function bubble(agent: Agent): string {
+// A boss waiting on its helpers shows who it is waiting on, with the meeting-room icon.
+function bubble(agent: Agent, scene: Scene): string {
   const isWaiting = agent.phase === 'waiting'
-  if (agent.activity === null && !isWaiting) return ''
-  const station: StationId = isWaiting ? 'reception' : agent.station
-  const text = agent.activity?.target ?? ''
+  const team = isCoordinating(scene, agent) ? waitingOn(scene, agent.id) : []
+  if (agent.activity === null && !isWaiting && team.length === 0) return ''
+  const station: StationId = isWaiting ? 'reception' : team.length > 0 ? 'meeting' : agent.station
+  const text =
+    team.length === 1 ? clip(`waiting on ${team[0]?.label ?? ''}`) : team.length > 1 ? `waiting on ${team.length}` : (agent.activity?.target ?? '')
   const width = 9 + Math.ceil(text.length * 2.4)
   const left = clamp(-Math.round(width / 2), 2 - agent.pos.x, WIDTH - 2 - agent.pos.x - width)
   const top = Math.max(-27, 1 - agent.pos.y)
@@ -157,13 +215,50 @@ function leaveAt(agent: Agent, now: number): string {
   return `<set attributeName="visibility" to="hidden" begin="${Math.max(0, Math.round(agent.goneAt - now))}ms"/>`
 }
 
-function drawAgent(agent: Agent, scene: Scene, now: number): string {
+// The folder or envelope an agent carries to another agent, hidden at the moment it is handed over.
+function carried(agent: Agent, now: number): string {
+  if (agent.carry === null || now >= agent.carry.until) return ''
+  return `<g>${itemSvg(agent.carry.item, -1, -5)}<set attributeName="visibility" to="hidden" begin="${Math.round(agent.carry.until - now)}ms"/></g>`
+}
+
+// Name tags sit over heads, or under the feet when a neighbour's tag already takes the space over a head:
+// a boss briefing a new helper sits right beside it, and both names must stay readable.
+const TAG_ABOVE = -14
+const TAG_BELOW = 5.5
+const TAG_CHAR = 2.1
+
+type TagSpot = { x0: number; x1: number; y: number; isBelow: boolean }
+
+export function tagsBelow(agents: readonly Agent[], now: number): Set<string> {
+  const placed: TagSpot[] = []
+  const below = new Set<string>()
+  for (const agent of agents) {
+    const pos = positionAt(agent, now)
+    const half = (Array.from(agent.label).length * TAG_CHAR) / 2 + 0.5
+    const spot = { x0: pos.x - half, x1: pos.x + half, y: pos.y }
+    const overlap = (isBelow: boolean): number =>
+      placed.reduce(
+        (sum, t) =>
+          t.isBelow === isBelow && Math.abs(t.y - spot.y) < 6
+            ? sum + Math.max(0, Math.min(t.x1, spot.x1) - Math.max(t.x0, spot.x0))
+            : sum,
+        0,
+      )
+    const above = overlap(false)
+    const isBelow = above > 0 && overlap(true) < above
+    placed.push({ ...spot, isBelow })
+    if (isBelow) below.add(agent.id)
+  }
+  return below
+}
+
+function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
   // The clock line ticks every second; keeping it out of the drawing keeps an idle office's source unchanged.
-  const facts = agentDetails(scene, agent.id, now).filter(line => !line.startsWith('On the job'))
+  const facts = agentDetails(scene, agent.id, now).filter(line => !PANEL_ONLY.some(start => line.startsWith(start)))
   const head = `<title>${escapeXml(facts.join('\n'))}</title>${leaveAt(agent, now)}`
   const tag =
-    '<text x="0" y="-14" font-size="3.5" text-anchor="middle" fill="#ffffff" stroke="#2c2c2a" ' +
+    `<text x="0" y="${isTagBelow ? TAG_BELOW : TAG_ABOVE}" font-size="3.5" text-anchor="middle" fill="#ffffff" stroke="#2c2c2a" ` +
     `stroke-width="0.8" paint-order="stroke">${escapeXml(agent.label)}</text>`
   const puff = agent.lastErrorAt !== null && now - agent.lastErrorAt < PUFF_MS ? errorPuff(PUFF_MS - (now - agent.lastErrorAt)) : ''
   const id = `agent-${escapeXml(agent.id)}`
@@ -171,7 +266,7 @@ function drawAgent(agent: Agent, scene: Scene, now: number): string {
     const rest = splitAt(agent.walk.points, (now - agent.walk.startedAt) / agent.walk.durationMs)
     const ms = Math.max(1, Math.round(agent.walk.startedAt + agent.walk.durationMs - now))
     const path = `M${rest.map(p => `${n(p.x)},${n(p.y)}`).join(' L')}`
-    return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${tag}${puff}</g>`
+    return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${carried(agent, now)}${tag}${puff}</g>`
   }
   const period = agent.activity !== null ? BOB[agent.station] : undefined
   const body = personSvg(agent.look, variant, 0)
@@ -179,7 +274,7 @@ function drawAgent(agent: Agent, scene: Scene, now: number): string {
     period === undefined
       ? body
       : `<g>${body}<animateTransform attributeName="transform" type="translate" values="0,0;0,-0.6;0,0" dur="${period}s" repeatCount="indefinite"/></g>`
-  return `<g id="${id}" transform="translate(${n(agent.pos.x)},${n(agent.pos.y)})">${head}${working}${tag}${bubble(agent)}${puff}</g>`
+  return `<g id="${id}" transform="translate(${n(agent.pos.x)},${n(agent.pos.y)})">${head}${working}${tag}${bubble(agent, scene)}${puff}</g>`
 }
 
 function overlays(scene: Scene, now: number): string {
@@ -241,12 +336,13 @@ export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): st
     `shape-rendering="crispEdges" font-family="monospace">${OFFICE_DEFS}${officeBase(isNight(now))}`
   const props = overlays(scene, now)
   const build = (withDecor: boolean, count: number): string => {
-    const people = ranked
+    const drawn = ranked
       .slice(0, count)
       .map(a => ({ a, y: positionAt(a, now).y }))
       .sort((p, q) => p.y - q.y)
-      .map(p => drawAgent(p.a, scene, now))
-      .join('')
+      .map(p => p.a)
+    const below = tagsBelow(drawn, now)
+    const people = drawn.map(a => drawAgent(a, scene, now, below.has(a.id))).join('')
     const extra = ranked.length - count
     return `${head}${withDecor ? officeDecor() : ''}${props}${people}${extra > 0 ? badge(extra) : ''}</svg>`
   }

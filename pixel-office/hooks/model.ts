@@ -1,5 +1,6 @@
-import type { Agent, OfficeEvent, Point, Scene, StationId, Walk } from '../types'
-import { narrate } from './narrate'
+import type { Agent, Carry, OfficeEvent, Outcome, Point, Scene, StationId, Walk } from '../types'
+import { allBackLine, narrate } from './narrate'
+import { COORDINATOR, asName, roleFor } from './roles'
 import { lookFor } from './sprites'
 import {
   WAITING_TOOLS,
@@ -29,9 +30,15 @@ export function emptyScene(): Scene {
     id: MAIN,
     parentId: null,
     type: 'main',
+    role: COORDINATOR.title,
+    name: null,
     label: 'Main',
-    description: 'Your main agent',
+    description: '',
+    brief: '',
+    report: '',
+    outcome: null,
     isTeammate: false,
+    isBackground: false,
     phase: 'idle',
     station: 'office',
     slot: 0,
@@ -43,6 +50,7 @@ export function emptyScene(): Scene {
     lastEventAt: 0,
     arrivedAt: 0,
     goneAt: null,
+    carry: null,
     look: lookFor('main', MAIN),
   }
   return { agents: { [MAIN]: main }, order: [MAIN], ticker: [], todos: null, briefing: null }
@@ -83,7 +91,16 @@ function freeSlot(scene: Scene, station: StationId, selfId: string): number {
 
 const walkMs = (length: number): number => clamp(Math.round((length / WALK_SPEED) * 1000), 400, 5000)
 
-function moveTo(scene: Scene, agent: Agent, target: StationId, at: number, via: readonly Stop[] = []): Agent {
+// Every walk drops whatever the agent was carrying, unless `item` says it carries something this time: it is
+// handed over when the walk reaches the first stop in `via`, the agent it is walking to.
+function moveTo(
+  scene: Scene,
+  agent: Agent,
+  target: StationId,
+  at: number,
+  via: readonly Stop[] = [],
+  item: Carry['item'] | null = null,
+): Agent {
   const station: StationId = target === 'desk' && agent.desk < 0 ? 'office' : target
   if (via.length === 0 && station === agent.station) return agent
   const slot =
@@ -103,14 +120,20 @@ function moveTo(scene: Scene, agent: Agent, target: StationId, at: number, via: 
     { point: dest, door: doorOf(station, slot) },
   ]
   let points: Point[] = [start]
+  let handover = 0
   for (let i = 1; i < stops.length; i++) {
     const a = stops[i - 1] as Stop
     const b = stops[i] as Stop
     points = points.concat(route(a.point, a.door, b.point, b.door).slice(1))
+    if (i === 1) handover = pathLength(points)
   }
   const length = pathLength(points)
   const walk: Walk | null = length < 0.5 ? null : { points, startedAt: at, durationMs: walkMs(length) }
-  return { ...agent, station, slot, pos: dest, walk }
+  const carry: Carry | null =
+    item === null || walk === null || via.length === 0
+      ? null
+      : { item, until: at + Math.round((walk.durationMs * handover) / length) }
+  return { ...agent, station, slot, pos: dest, walk, carry }
 }
 
 function beside(agent: Agent): Stop {
@@ -120,10 +143,22 @@ function beside(agent: Agent): Stop {
   }
 }
 
+// The first of a kind is plain "Researcher", the next "Researcher 2". Numbering goes on from the highest number
+// in the office, so a label is never handed out twice, even after old helpers are pruned from the model.
 function uniqueLabel(scene: Scene, base: string): string {
-  const taken = Object.values(scene.agents).filter(a => a.label === base || a.label.startsWith(`${base} `)).length
-  return taken === 0 ? base : `${base} ${taken + 1}`
+  let highest = 0
+  for (const a of Object.values(scene.agents)) {
+    if (a.label === base) highest = Math.max(highest, 1)
+    else if (a.label.startsWith(`${base} `)) {
+      const n = Number(a.label.slice(base.length + 1))
+      if (Number.isInteger(n) && n > 1) highest = Math.max(highest, n)
+    }
+  }
+  return highest === 0 ? base : `${base} ${highest + 1}`
 }
+
+const labelFor = (scene: Scene, type: string, name: string | null): string =>
+  uniqueLabel(scene, name === null || name === '' ? roleFor(type).title : asName(name))
 
 function nextDesk(scene: Scene): number {
   const used = new Set(
@@ -136,14 +171,22 @@ function nextDesk(scene: Scene): number {
   return desk
 }
 
+// A contractor (an agent the office never saw hired) is taken to work in the background: nothing says its boss
+// is waiting on it, so it never makes its boss look busy.
 function arrive(scene: Scene, id: string, type: string, label: string, at: number): Agent {
   return {
     id,
     parentId: MAIN,
     type,
+    role: roleFor(type).title,
+    name: null,
     label,
     description: '',
+    brief: '',
+    report: '',
+    outcome: null,
     isTeammate: false,
+    isBackground: true,
     phase: 'arriving',
     station: 'elevator',
     slot: 0,
@@ -155,8 +198,31 @@ function arrive(scene: Scene, id: string, type: string, label: string, at: numbe
     lastEventAt: at,
     arrivedAt: at,
     goneAt: null,
+    carry: null,
     look: lookFor(type, id),
   }
+}
+
+const isOut = (agent: Agent): boolean =>
+  agent.phase === 'arriving' || agent.phase === 'briefing' || agent.phase === 'working' || agent.phase === 'waiting'
+
+// The helpers `bossId` is waiting on: hired in the foreground (the boss's call to hire them only returns with
+// their report) and still out on the job, in the order they were hired. A teammate is a standing colleague
+// rather than an errand, so its boss never waits on it.
+export function waitingOn(scene: Scene, bossId: string): Agent[] {
+  const out: Agent[] = []
+  for (const id of scene.order) {
+    const a = scene.agents[id]
+    if (a !== undefined && a.parentId === bossId && !a.isBackground && !a.isTeammate && isOut(a)) out.push(a)
+  }
+  return out
+}
+
+// A boss with nothing in hand, waiting for the reports of the helpers it hired, is coordinating rather than
+// thinking. A boss that is using a tool, waiting on you, resting or gone is doing that instead.
+export function isCoordinating(scene: Scene, agent: Agent): boolean {
+  if (agent.activity !== null || agent.phase === 'gone' || agent.phase === 'idle' || agent.phase === 'waiting') return false
+  return waitingOn(scene, agent.id).length > 0
 }
 
 function endBriefing(scene: Scene, agent: Agent, at: number): Scene {
@@ -172,13 +238,16 @@ function endBriefing(scene: Scene, agent: Agent, at: number): Scene {
 function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   const existing = scene.agents[ev.id]
   let s = scene
+  const hire = {
+    parentId: ev.parentId,
+    description: ev.description,
+    brief: ev.brief,
+    name: ev.name,
+    isTeammate: ev.isTeammate,
+    isBackground: ev.isBackground,
+  }
   if (existing === undefined) {
-    const fresh = {
-      ...arrive(s, ev.id, ev.type, uniqueLabel(s, ev.name ?? ev.type), ev.at),
-      parentId: ev.parentId,
-      description: ev.description,
-      isTeammate: ev.isTeammate,
-    }
+    const fresh = { ...arrive(s, ev.id, ev.type, labelFor(s, ev.type, ev.name), ev.at), ...hire }
     s = addAgent(s, { ...moveTo(s, fresh, 'meeting', ev.at), phase: 'briefing' })
     const parent = s.agents[ev.parentId]
     if (parent !== undefined && parent.activity === null && parent.phase !== 'gone') {
@@ -186,14 +255,13 @@ function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
     }
     s = { ...s, briefing: ev.description }
   } else {
-    const label = existing.type === 'contractor' ? uniqueLabel(s, ev.name ?? ev.type) : existing.label
+    const label = existing.type === 'contractor' ? labelFor(s, ev.type, ev.name) : existing.label
     s = put(s, {
       ...existing,
+      ...hire,
       type: ev.type,
+      role: roleFor(ev.type).title,
       label,
-      parentId: ev.parentId,
-      description: ev.description,
-      isTeammate: ev.isTeammate,
       look: lookFor(ev.type, ev.id),
       lastEventAt: ev.at,
     })
@@ -201,10 +269,14 @@ function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   return withLine(s, ev.at, narrate(s, ev))
 }
 
+// Messages are addressed by the name the engine knows an agent by, by its id, or (for "main") by its label.
 function findByName(scene: Scene, name: string, selfId: string): Agent | undefined {
   const wanted = name.toLowerCase()
   return Object.values(scene.agents).find(
-    a => a.id !== selfId && a.phase !== 'gone' && (a.label.toLowerCase() === wanted || a.id === name),
+    a =>
+      a.id !== selfId &&
+      a.phase !== 'gone' &&
+      (a.name?.toLowerCase() === wanted || a.label.toLowerCase() === wanted || a.id === name),
   )
 }
 
@@ -223,6 +295,8 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
       pos: slotPoint('elevator', 0),
       walk: null,
       goneAt: null,
+      outcome: null,
+      carry: null,
       desk: nextDesk(s),
       arrivedAt: ev.at,
     }
@@ -231,14 +305,17 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
   let moved: Agent
   if (ev.tool === 'SendMessage') {
     const recipient = findByName(s, ev.target, agent.id)
-    moved = recipient !== undefined ? moveTo(s, agent, agent.station, ev.at, [beside(recipient)]) : moveTo(s, agent, 'meeting', ev.at)
+    moved =
+      recipient !== undefined
+        ? moveTo(s, agent, agent.station, ev.at, [beside(recipient)], 'message')
+        : moveTo(s, agent, 'meeting', ev.at)
   } else {
     moved = moveTo(s, agent, stationFor(ev.tool), ev.at)
   }
   s = put(s, {
     ...moved,
     phase: WAITING_TOOLS.has(ev.tool) ? 'waiting' : 'working',
-    activity: { tool: ev.tool, target: ev.target, callId: ev.callId, since: ev.at },
+    activity: { tool: ev.tool, target: ev.target, detail: ev.detail, callId: ev.callId, since: ev.at },
     lastEventAt: ev.at,
   })
   if (wasBriefing) s = endBriefing(s, agent, ev.at)
@@ -301,25 +378,42 @@ function prune(scene: Scene): Scene {
   return { ...scene, agents, order: scene.order.filter(id => !drop.has(id)) }
 }
 
+const OUTCOMES: Readonly<Record<Ev<'handedBack'>['reason'], Outcome>> = {
+  answer: 'reported',
+  aborted: 'stopped',
+  refusal: 'failed',
+  error: 'failed',
+}
+
+// The helper carries its report to its boss, then leaves by the elevator (a teammate goes for a break instead).
+// When it was the last report its boss was waiting for, the feed says so: that is when the boss takes over again.
 function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
   const agent = scene.agents[ev.agentId]
   if (agent === undefined || agent.id === MAIN || agent.phase === 'gone') return scene
   const parent = agent.parentId === null ? undefined : scene.agents[agent.parentId]
-  const via = parent !== undefined && parent.phase !== 'gone' ? [beside(parent)] : []
+  const isParentHere = parent !== undefined && parent.phase !== 'gone'
+  const via = isParentHere ? [beside(parent)] : []
+  const outcome = OUTCOMES[ev.reason]
+  const item = outcome === 'stopped' ? null : 'report'
   let next: Agent
   if (agent.isTeammate) {
-    next = { ...moveTo(scene, agent, 'breakroom', ev.at, via), phase: 'idle' }
+    next = { ...moveTo(scene, agent, 'breakroom', ev.at, via, item), phase: 'idle' }
   } else {
-    const moved = moveTo(scene, agent, 'elevator', ev.at, via)
+    const moved = moveTo(scene, agent, 'elevator', ev.at, via, item)
     next = { ...moved, phase: 'gone', goneAt: ev.at + (moved.walk?.durationMs ?? 0) }
   }
-  let s = put(scene, { ...next, activity: null, lastEventAt: ev.at })
+  const awaitedBy = isParentHere && waitingOn(scene, parent.id).some(a => a.id === agent.id) ? parent : undefined
+  let s = put(scene, { ...next, activity: null, report: ev.report, outcome, lastEventAt: ev.at })
   if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at)
   s = prune(s)
-  return withLine(s, ev.at, narrate(s, ev))
+  s = withLine(s, ev.at, narrate(s, ev))
+  if (awaitedBy !== undefined && waitingOn(s, awaitedBy.id).length === 0) s = withLine(s, ev.at, allBackLine(awaitedBy.label))
+  return s
 }
 
-function sweepTarget(agent: Agent, now: number): StationId | null {
+// A boss waiting on its helpers is at work however long they take, so the sweep may walk it home but never
+// sends it to the break room.
+function sweepTarget(agent: Agent, now: number, isWaitingOnTeam: boolean): StationId | null {
   if (agent.activity !== null || agent.phase === 'gone') return null
   const quiet = now - agent.lastEventAt
   // A briefing normally ends with the agent's first tool; one that never comes must not hold the room forever.
@@ -331,13 +425,13 @@ function sweepTarget(agent: Agent, now: number): StationId | null {
     if (quiet >= IDLE_MS) return 'breakroom'
     return quiet >= LINGER_MS && agent.station !== homeOf(agent) ? homeOf(agent) : null
   }
-  if (quiet >= IDLE_MS) return 'breakroom'
+  if (quiet >= IDLE_MS && !isWaitingOnTeam) return 'breakroom'
   if (quiet >= LINGER_MS && agent.station !== homeOf(agent)) return homeOf(agent)
   return null
 }
 
 export function needsSweep(scene: Scene, now: number): boolean {
-  return Object.values(scene.agents).some(a => sweepTarget(a, now) !== null)
+  return Object.values(scene.agents).some(a => sweepTarget(a, now, isCoordinating(scene, a)) !== null)
 }
 
 function tick(scene: Scene, at: number): Scene {
@@ -345,7 +439,7 @@ function tick(scene: Scene, at: number): Scene {
   for (const id of scene.order) {
     const agent = s.agents[id]
     if (agent === undefined) continue
-    const target = sweepTarget(agent, at)
+    const target = sweepTarget(agent, at, isCoordinating(s, agent))
     if (target === null) continue
     s = put(s, { ...moveTo(s, agent, target, at), phase: target === 'breakroom' || agent.phase === 'idle' ? 'idle' : 'working' })
     if (agent.phase === 'briefing') s = endBriefing(s, agent, at)

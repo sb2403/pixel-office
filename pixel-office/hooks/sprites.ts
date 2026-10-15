@@ -1,4 +1,4 @@
-import type { Look, StationId } from '../types'
+import type { Carry, Look, StationId } from '../types'
 
 export type Grid = readonly string[]
 export type Variant = 'main' | 'teammate' | 'plain'
@@ -64,6 +64,17 @@ const ICONS: Record<StationId, Grid> = {
 
 export function iconSvg(station: StationId, x: number, y: number, color: string): string {
   return rle(ICONS[station], { x: color }, x, y)
+}
+
+// What an agent carries to another agent, held in front of its body: a manila folder for a report, an
+// envelope for a message.
+const ITEMS: Record<Carry['item'], { grid: Grid; colors: Readonly<Record<string, string>> }> = {
+  report: { grid: ['tt...', 'fffff', 'fffff', 'fffff'], colors: { t: '#ba7517', f: '#fac775' } },
+  message: { grid: ['wwwww', 'gwwwg', 'wgwgw', 'wwgww'], colors: { w: '#ffffff', g: '#888780' } },
+}
+
+export function itemSvg(item: Carry['item'], x: number, y: number): string {
+  return rle(ITEMS[item].grid, ITEMS[item].colors, x, y)
 }
 
 export function hash(text: string): number {

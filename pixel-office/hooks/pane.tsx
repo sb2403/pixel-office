@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
 import { emptyScene } from './model'
-import { agentDetails, altText, clockLabel, objectiveLine, orgRows, renderOffice } from './render'
+import { STATUS_WORDS, agentDetails, altText, clockLabel, objectiveLine, orgRows, renderOffice } from './render'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
@@ -11,7 +11,8 @@ const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyS
 const legendAtom = atom({ plugin: 'pixel-office', key: 'legendOpen' } as const, false)
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
-const STATUS_COLOR = { working: 'green', waiting: 'yellow', idle: 'gray', done: 'gray' } as const
+// Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
+const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
 export function registerPane(on: On): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -34,9 +35,9 @@ export function registerPane(on: On): void {
             const objective = objectiveLine(scene, row.id, row.depth, e.props.bodyColumns)
             return (
               <Box key={`row-${row.id}`} flexDirection="column">
-                <Text>
+                <Text wrap="truncate-end">
                   {'  '.repeat(row.depth)}
-                  {row.label}: {row.status}, {row.place}
+                  {row.label}: {STATUS_WORDS[row.status]}, {row.now}
                 </Text>
                 {objective !== '' && <Text dimColor>{objective}</Text>}
               </Box>
@@ -67,7 +68,7 @@ export function registerPane(on: On): void {
             ))}
           </Box>
           <Box key="org" flexDirection="column" width={orgWidth}>
-            <Text bold>Who reports to whom</Text>
+            <Text bold>Who's doing what</Text>
             {shown.map(row => {
               const objective = objectiveLine(scene, row.id, row.depth, orgWidth)
               return (
@@ -77,9 +78,9 @@ export function registerPane(on: On): void {
                     plain
                     onPress={() => update($, selectedAtom, current => (current === row.id ? null : row.id))}
                   >
-                    <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'done'}>
+                    <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'done'} wrap="truncate-end">
                       {'  '.repeat(row.depth)}
-                      {row.label} · {row.status} · {row.place}
+                      {row.label} · {STATUS_WORDS[row.status]} · {row.now}
                     </Text>
                   </Button>
                   {objective !== '' && (

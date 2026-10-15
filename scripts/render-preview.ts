@@ -16,8 +16,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { MAIN, emptyScene, isWalkingAt, reduce } from '../pixel-office/hooks/model'
-import { agentDetails, clockLabel, escapeXml, objectiveLine, orgRows, renderOffice } from '../pixel-office/hooks/render'
+import { MAIN, emptyScene, isCoordinating, isWalkingAt, reduce, waitingOn } from '../pixel-office/hooks/model'
+import { STATUS_WORDS, agentDetails, clockLabel, escapeXml, objectiveLine, orgRows, renderOffice } from '../pixel-office/hooks/render'
 import { HEIGHT, STATIONS, STATION_ORDER, WIDTH, clip, slotPoint } from '../pixel-office/hooks/stations'
 import type { OfficeEvent, Scene, StationId } from '../pixel-office/types'
 
@@ -31,23 +31,26 @@ const at = (seconds: number): number => T0 + Math.round(seconds * 1000)
 const EXPLORE = 'explore-1'
 const PLAN = 'plan-1'
 const TESTER = 'tester-1'
-const FIXER = 'fixer-1'
+const DIGGER = 'digger-1'
 
-const spawn = (id: string, type: string, description: string, seconds: number): OfficeEvent => ({
+const spawn = (id: string, type: string, description: string, brief: string, seconds: number, parentId = MAIN): OfficeEvent => ({
   kind: 'spawned',
   id,
-  parentId: MAIN,
+  parentId,
   type,
   description,
+  brief,
   name: null,
   isTeammate: false,
+  isBackground: false,
   at: at(seconds),
 })
-const begin = (agentId: string, tool: string, target: string, callId: string, seconds: number): OfficeEvent => ({
+const begin = (agentId: string, tool: string, target: string, callId: string, seconds: number, detail = ''): OfficeEvent => ({
   kind: 'toolStarted',
   agentId,
   tool,
   target,
+  detail,
   callId,
   at: at(seconds),
 })
@@ -59,6 +62,8 @@ const finish = (agentId: string, callId: string, seconds: number): OfficeEvent =
   at: at(seconds),
 })
 
+const REPORT = 'Sessions are created in startSession() in auth.ts and read back in middleware.ts. The token is never refreshed.'
+
 const STORY: OfficeEvent[] = [
   { kind: 'turnStarted', isContinuation: false, at: at(0) },
   // Main plans the work on the task board, then the sweep sends it back to the corner office.
@@ -66,29 +71,28 @@ const STORY: OfficeEvent[] = [
   { kind: 'todos', done: 2, open: 3, at: at(3) },
   finish(MAIN, 'todo-1', 5),
   { kind: 'tick', at: at(15) },
-  // Three helpers, each hired with a clear objective, each briefed and then sent to the right station.
-  spawn(EXPLORE, 'Explore', 'find the login code', 20),
+  // Main splits the job three ways and hires all three helpers at once, in the foreground: from here on it is
+  // coordinating, waiting for their reports rather than working on its own.
+  spawn(EXPLORE, 'Explore', 'find the login code', 'Find where the login flow creates a session and list the files involved.', 20),
+  spawn(PLAN, 'Plan', 'design the fix', 'Design a fix for sessions that expire too early. Do not change any files.', 20.2),
+  spawn(TESTER, 'general-purpose', 'run the test suite', 'Run the whole test suite and report which tests fail and why.', 20.4),
+  // Each helper's first tool ends its briefing and takes it to the matching station.
   begin(EXPLORE, 'Read', 'auth.ts', 'read-1', 24),
-  // Main reads a file of its own in the library while the next helper is hired. It still has that tool
-  // open, so it stays put instead of walking to the meeting room, and the helper that arrives next queues
-  // one place further along (two speech bubbles do not sit on top of each other). The sweep sends Main
-  // home afterwards.
-  begin(MAIN, 'Read', 'package.json', 'read-2', 30),
-  spawn(PLAN, 'Plan', 'design the fix', 40),
-  begin(PLAN, 'Grep', 'session', 'grep-1', 44),
-  finish(MAIN, 'read-2', 52),
-  { kind: 'tick', at: at(62) },
-  spawn(TESTER, 'general-purpose', 'run the test suite', 70),
-  begin(TESTER, 'Bash', 'npm test', 'bash-1', 74),
-  // Main writes up notes at its own desk (the printer in the desk area starts to print).
-  begin(MAIN, 'Write', 'notes.md', 'write-1', 100),
-  // A fourth helper has just been hired. It is still walking in from the elevator, so the whiteboard already
-  // shows its objective. Main is busy, so it does not walk over.
-  spawn(FIXER, 'general-purpose', 'fix the login bug', 125),
+  begin(PLAN, 'Grep', 'session', 'grep-1', 25),
+  begin(TESTER, 'Bash', 'npm test', 'bash-1', 26, 'Run the test suite'),
+  finish(EXPLORE, 'read-1', 70),
+  finish(TESTER, 'bash-1', 90),
+  finish(PLAN, 'grep-1', 94),
+  begin(PLAN, 'Read', 'session.ts', 'read-2', 95),
+  // The Assistant found a failing test and hires a helper of its own to dig into it: a chain of delegation. It
+  // walks to the meeting room to brief it, and now it too is coordinating.
+  spawn(DIGGER, 'Explore', 'find why a test fails', 'Find out why the token refresh test fails.', 104, TESTER),
+  // The Researcher hands its report in: it walks to Main with a folder, then on to the elevator.
+  { kind: 'handedBack', agentId: EXPLORE, reason: 'answer', report: REPORT, at: at(118) },
 ]
 
-// A moment 0.6 seconds after the last hire, while that walk is still under way.
-const NOW = at(125.6)
+// A moment 0.6 seconds after the Researcher set off with its report, while that walk is still under way.
+const NOW = at(118.6)
 
 const scene: Scene = STORY.reduce(reduce, emptyScene())
 
@@ -105,18 +109,20 @@ function checkScene(s: Scene): void {
   const explore = agent(EXPLORE)
   const plan = agent(PLAN)
   const tester = agent(TESTER)
-  const fixer = agent(FIXER)
+  const digger = agent(DIGGER)
   const main = agent(MAIN)
-  expect(explore.station === 'library' && explore.activity?.target === 'auth.ts', 'Explore reads auth.ts in the library')
-  expect(plan.station === 'library' && plan.activity?.target === 'session', 'Plan searches in the library')
-  expect(tester.station === 'server' && tester.activity?.target === 'npm test', 'the tester runs npm test in the server room')
-  expect([explore, plan, tester].every(a => !isWalkingAt(a, NOW)), 'the three working helpers are settled at their stations')
-  expect(fixer.phase === 'briefing' && fixer.station === 'meeting' && isWalkingAt(fixer, NOW), 'the newest helper is walking to the meeting room')
-  expect(main.station === 'office' && main.activity?.target === 'notes.md' && !isWalkingAt(main, NOW), 'Main is working at the corner office')
-  expect(plan.slot - explore.slot >= 2, 'the two library helpers stand far enough apart for both speech bubbles to read')
-  expect(s.briefing === 'fix the login bug', 'the whiteboard shows the newest objective')
+  expect(explore.label === 'Researcher' && plan.label === 'Planner' && tester.label === 'Assistant', 'helpers go by their roles')
+  expect(digger.label === 'Researcher 2' && digger.parentId === TESTER, 'the Assistant hired a second Researcher of its own')
+  expect(explore.phase === 'gone' && isWalkingAt(explore, NOW), 'the Researcher is walking out after reporting')
+  expect(explore.carry?.item === 'report' && NOW < explore.carry.until, 'the Researcher still carries its report to Main')
+  expect(plan.station === 'library' && plan.activity?.target === 'session.ts' && !isWalkingAt(plan, NOW), 'the Planner reads session.ts in the library')
+  expect(main.station === 'office' && isCoordinating(s, main) && !isWalkingAt(main, NOW), 'Main is coordinating from the corner office')
+  expect(waitingOn(s, MAIN).map(a => a.id).join() === [PLAN, TESTER].join(), 'Main waits on the Planner and the Assistant')
+  expect(tester.station === 'meeting' && isCoordinating(s, tester) && !isWalkingAt(tester, NOW), 'the Assistant waits on its own helper')
+  expect(digger.phase === 'briefing' && !isWalkingAt(digger, NOW), 'the newest helper is being briefed')
+  expect(s.briefing === 'find why a test fails', 'the whiteboard shows the newest objective')
   expect(s.todos !== null && s.todos.done > 0 && s.todos.open > 0, 'the task board has done and open notes')
-  expect(s.ticker.length >= 6, 'the feed has a few lines')
+  expect(s.ticker.length === 8, 'the feed is full')
 }
 
 checkScene(scene)
@@ -269,7 +275,7 @@ const DIM = '#77736a'
 const FAINT = '#a39f93'
 const LINE = '#d8d4c8'
 const ACCENT = '#d97757'
-const STATUS_INK = { working: '#2f7d32', waiting: '#a06a00', idle: DIM, done: FAINT } as const
+const STATUS_INK = { working: '#2f7d32', coordinating: '#0f6e56', waiting: '#a06a00', idle: DIM, done: FAINT } as const
 
 const W = 880
 const PAD = 16
@@ -315,7 +321,7 @@ function panePreview(s: Scene, now: number, selectedId: string): string {
   out += '</g>'
 
   // Right column: the org chart
-  out += `<g font-family="${SANS}">${txt(RIGHT_X + 28, headY, 'Who reports to whom', ` font-size="14" font-weight="bold" fill="${INK}"`)}</g>`
+  out += `<g font-family="${SANS}">${txt(RIGHT_X + 28, headY, "Who's doing what", ` font-size="14" font-weight="bold" fill="${INK}"`)}</g>`
   out += badge(3, RIGHT_X + 11, headY - 5)
   y = COLS_Y + 44
   const orgWidth = 40
@@ -325,7 +331,8 @@ function panePreview(s: Scene, now: number, selectedId: string): string {
       out += `<rect x="${RIGHT_X}" y="${y - 15}" width="${W - PAD - RIGHT_X}" height="22" rx="4" fill="#f1ece0"/>`
       out += `<rect x="${RIGHT_X}" y="${y - 15}" width="3" height="22" rx="1.5" fill="${ACCENT}"/>`
     }
-    out += `<g font-family="${MONO}" font-size="12">${txt(x, y, `${row.label} · ${row.status} · ${row.place}`, ` fill="${STATUS_INK[row.status]}"`)}</g>`
+    const rowText = clip(`${row.label} · ${STATUS_WORDS[row.status]} · ${row.now}`, 56 - row.depth * 2)
+    out += `<g font-family="${MONO}" font-size="12">${txt(x, y, rowText, ` fill="${STATUS_INK[row.status]}"`)}</g>`
     const objective = objectiveLine(s, row.id, row.depth, orgWidth).trim()
     if (objective !== '') {
       y += 17
@@ -339,10 +346,11 @@ function panePreview(s: Scene, now: number, selectedId: string): string {
   expect(lines.some(line => line.startsWith('On the job')), 'the details box shows the On the job line')
   const boxY = y + 6
   const boxH = 18 * lines.length + 20
-  out += `<rect x="${RIGHT_X}" y="${boxY}" width="330" height="${boxH}" rx="8" fill="#ffffff" stroke="${LINE}"/>`
+  // The pane wraps long lines; the picture cuts them to the box instead.
+  out += `<rect x="${RIGHT_X}" y="${boxY}" width="${W - PAD - RIGHT_X}" height="${boxH}" rx="8" fill="#ffffff" stroke="${LINE}"/>`
   out += `<g font-family="${MONO}" font-size="12">`
   lines.forEach((line, i) => {
-    out += txt(RIGHT_X + 16, boxY + 26 + i * 18, line, i === 0 ? ` font-weight="bold" fill="${INK}"` : ` fill="#55524a"`)
+    out += txt(RIGHT_X + 16, boxY + 26 + i * 18, clip(line, 54), i === 0 ? ` font-weight="bold" fill="${INK}"` : ` fill="#55524a"`)
   })
   out += '</g>'
   out += badge(4, RIGHT_X + 2, boxY + 2)
@@ -354,7 +362,7 @@ function panePreview(s: Scene, now: number, selectedId: string): string {
   out += badge(5, PAD + 140, buttonY + 15)
 
   const height = Math.max(buttonY + 30, y) + PAD + 8
-  const caption = 'The Pixel Office pane: the animated office, a feed of what just happened, an org chart with a details box, and a legend button.'
+  const caption = "The Pixel Office pane: the animated office, a feed of what just happened, who's doing what with a details box, and a legend button."
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}">` +
     `<title>The Pixel Office pane</title><desc>${escapeXml(caption)}</desc>` +
