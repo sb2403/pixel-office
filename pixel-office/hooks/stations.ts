@@ -45,6 +45,7 @@ const MEETING_SEATS: Point[] = [
   { x: 110, y: 114 },
   { x: 122, y: 114 },
   { x: 134, y: 140 },
+  { x: 134, y: 114 },
 ]
 
 export const STATIONS: Record<StationId, StationDef> = {

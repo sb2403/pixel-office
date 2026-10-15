@@ -131,8 +131,9 @@ describe('renderOffice', () => {
     expect(titles.some(t => t.includes('On the job'))).toBe(false)
     expect(titles.some(t => t.includes('Job: find auth code'))).toBe(true)
     expect(titles.some(t => t.includes('Brief:'))).toBe(false)
-    expect(renderOffice(s, 66_000)).toBe(renderOffice(s, 66_000))
-    expect(renderOffice(s, 67_000)).toBe(svg)
+    // Drawn through the pane's cache, an idle office is the same text a second later.
+    forgetOffice()
+    expect(officeSource(s, 67_000)).toBe(officeSource(s, 66_000))
   })
 
   test('a boss waiting on its helpers says who it is waiting on', async () => {

@@ -214,13 +214,36 @@ function serverRoom(): string {
   return `${out}</g>`
 }
 
+// Everything here is centred on x = 116, the middle of the seats: the rug, the whiteboard, the table and the chairs.
+// The whiteboard sits at the rug's north edge, above the heads of those standing at the top seats.
 function meetingRoom(): string {
-  let out = `<g id="po-zone-meeting">${rect(80, 100, 70, 46, C.rug)}${rect(82, 102, 66, 42, C.rugInner)}`
-  out += rect(94, 98, 38, 8, C.frame) + rect(95, 99, 36, 6, C.board) + rect(96, 106, 1, 4, C.frame) + rect(129, 106, 1, 4, C.frame)
-  for (const x of [96, 108, 120]) out += rect(x, 109, 4, 3, C.chair)
-  for (const x of [96, 108, 120, 132]) out += rect(x, 128, 4, 3, C.chair)
-  out += shade(93, 127, 42, 3) + rect(92, 116, 42, 10, C.deskTop) + rect(92, 116, 42, 1, C.deskLit) + rect(92, 126, 42, 2, C.deskEdge)
+  let out = '<g id="po-zone-meeting">'
+  out += rect(80, 92, 72, 56, C.rug) + rect(82, 94, 68, 52, C.rugInner) + rect(84, 96, 64, 48, C.rug, ' fill-opacity="0.35"') + rect(86, 98, 60, 44, C.rugInner)
+  // The whiteboard: a frame on two feet, a marker tray and a few lines of writing.
+  out += shade(98, 101, 38, 2) + rect(97, 93, 38, 8, C.frame) + rect(98, 94, 36, 6, C.board)
+  out += rect(100, 95, 14, 1, '#d85a30', ' fill-opacity="0.45"') + rect(100, 97, 20, 1, '#378add', ' fill-opacity="0.45"') + rect(100, 98, 9, 1, '#3b6d11', ' fill-opacity="0.45"') + rect(124, 95, 8, 3, '#fac775', ' fill-opacity="0.6"')
+  out += rect(99, 101, 1, 3, C.frame) + rect(133, 101, 1, 3, C.frame) + rect(104, 101, 24, 1, '#8a8474')
+  // Four chairs a side, one at each seat.
+  for (const x of [96, 108, 120, 132]) out += rect(x, 111, 4, 3, C.chair) + rect(x, 128, 4, 3, C.chair)
+  // The table, with what a meeting leaves on it.
+  out += shade(95, 127, 44, 3) + rect(94, 116, 44, 10, C.deskTop) + rect(94, 116, 44, 1, C.deskLit) + rect(94, 126, 44, 2, C.deskEdge)
+  out += rect(99, 118, 5, 4, '#f1efe8') + rect(100, 119, 3, 1, '#b4b2a9') + rect(112, 119, 6, 4, C.monitor) + rect(113, 120, 4, 2, C.screen)
+  out += rect(124, 119, 2, 2, '#d85a30') + rect(129, 118, 4, 5, '#f1efe8') + rect(130, 119, 2, 1, '#b4b2a9')
   return `${out}</g>`
+}
+
+// A runner down the middle of the corridor, so the open floor between the desks and the meeting room reads as a
+// place rather than as left-over space.
+function runner(): string {
+  return (
+    '<g id="po-runner">' +
+    shade(71, 88, 96, 2) +
+    rect(70, 78, 96, 10, '#8b4a3c') +
+    rect(71, 79, 94, 8, '#a45a47') +
+    rect(73, 81, 90, 4, '#8b4a3c') +
+    rect(74, 82, 88, 2, '#c98a62') +
+    '</g>'
+  )
 }
 
 function breakRoom(): string {
@@ -289,6 +312,7 @@ export function officeBase(isNight: boolean): string {
     floors(),
     walls(isNight),
     cornerOffice(),
+    runner(),
     desks(),
     library(),
     mailroom(),
