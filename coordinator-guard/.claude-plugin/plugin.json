@@ -1,0 +1,7 @@
+{
+  "name": "coordinator-guard",
+  "version": "0.1.0",
+  "description": "Keeps the main agent a coordinator: it may read, search and hire helpers, but file edits are left to them",
+  "author": { "name": "Spencer Barrett" },
+  "license": "MIT"
+}

@@ -12,6 +12,7 @@ import {
   positionAt,
   reduce,
   waitingOn,
+  topicOf,
 } from '../hooks/model'
 import { slotPoint } from '../hooks/stations'
 import type { OfficeEvent, Scene } from '../types'
@@ -72,10 +73,26 @@ describe('arrivals and briefings', () => {
     expect(lastLine(s)).toBe('Main hired Researcher and is waiting for its report: find auth code')
   })
 
-  test('a second agent of the same type gets a numbered label and its own desk', async () => {
-    const s = run([spawn('a1', 1000), spawn('a2', 1000)])
-    expect(s.agents.a2!.label).toBe('Researcher 2')
+  test('a second agent of the same type is told apart by its job and gets its own desk', async () => {
+    const s = run([spawn('a1', 1000), spawn('a2', 1000, { description: 'audit the hooks module' })])
+    expect(s.agents.a1!.label).toBe('Researcher')
+    expect(s.agents.a2!.label).toBe('Hooks module')
     expect(s.agents.a2!.desk).not.toBe(s.agents.a1!.desk)
+  })
+
+  test('a second agent with the same job, or no job, is numbered', async () => {
+    const same = run([spawn('a1', 1000), spawn('a2', 1000)])
+    expect(same.agents.a2!.label).toBe('Auth code')
+    expect(reduce(same, spawn('a3', 1000)).agents.a3!.label).toBe('Auth code 2')
+    const none = run([spawn('a1', 1000), spawn('a2', 1000, { description: '' })])
+    expect(none.agents.a2!.label).toBe('Researcher 2')
+  })
+
+  test('a job is boiled down to a few words that fit a name tag', async () => {
+    expect(topicOf('Find the login code')).toBe('login code')
+    expect(topicOf('Audit the very long and descriptive job title')).toBe('very long')
+    expect(topicOf('find')).toBe('find')
+    expect(topicOf('')).toBe('')
   })
 
   test('the first tool ends the briefing and sends the parent home', async () => {
@@ -396,14 +413,15 @@ describe('names', () => {
   })
 
   test('numbering goes on from the highest number, so a label is never handed out twice', async () => {
-    const s = run([spawn('a1', 1000), spawn('a2', 1000), spawn('a3', 1000)])
+    const nameless = { description: '' }
+    const s = run([spawn('a1', 1000, nameless), spawn('a2', 1000, nameless), spawn('a3', 1000, nameless)])
     expect(s.agents.a3!.label).toBe('Researcher 3')
     // As if the first two had been pruned: the next one still gets a fresh number.
     const { a1: _a1, a2: _a2, ...rest } = s.agents
     const pruned: Scene = { ...s, agents: rest, order: s.order.filter(id => id !== 'a1' && id !== 'a2') }
-    expect(reduce(pruned, spawn('a4', 2000)).agents.a4!.label).toBe('Researcher 4')
+    expect(reduce(pruned, spawn('a4', 2000, nameless)).agents.a4!.label).toBe('Researcher 4')
     // A label that only starts with the same word is a different name.
-    const other = run([spawn('n1', 1000, { name: 'Researcher helper' }), spawn('a5', 1000)])
+    const other = run([spawn('n1', 1000, { name: 'Researcher helper' }), spawn('a5', 1000, nameless)])
     expect(other.agents.a5!.label).toBe('Researcher')
   })
 })
@@ -439,6 +457,26 @@ describe('coordinating', () => {
     const both = reduce(one, back('a2', 6000, 'here is the plan'))
     expect(lastLine(both)).toBe('Main has every report back and is reviewing the results')
     expect(isCoordinating(both, both.agents[MAIN]!)).toBe(false)
+  })
+
+  test('a helper that hires its own helper coordinates too, and Main waits until the whole chain is back', async () => {
+    const s = run([
+      turnStarted,
+      spawn('a1', 1000, { type: 'general-purpose', description: 'fix the login bug' }),
+      spawn('b1', 1500, { parentId: 'a1', description: 'find the failing test' }),
+    ])
+    expect(waitingOn(s, MAIN).map(a => a.id)).toEqual(['a1'])
+    expect(waitingOn(s, 'a1').map(a => a.id)).toEqual(['b1'])
+    expect(isCoordinating(s, s.agents.a1!)).toBe(true)
+    expect(isCoordinating(s, s.agents[MAIN]!)).toBe(true)
+    // The inner report comes back: a1 is free of waiting, but Main still waits on a1.
+    const inner = reduce(s, back('b1', 2000, 'test_login fails'))
+    expect(isCoordinating(inner, inner.agents.a1!)).toBe(false)
+    expect(isCoordinating(inner, inner.agents[MAIN]!)).toBe(true)
+    // Only when a1 reports does Main hear back from everyone.
+    const done = reduce(inner, back('a1', 3000, 'fixed'))
+    expect(isCoordinating(done, done.agents[MAIN]!)).toBe(false)
+    expect(lastLine(done)).toBe('Main has every report back and is reviewing the results')
   })
 
   test('a boss waiting on a long job is never sent for coffee', async () => {

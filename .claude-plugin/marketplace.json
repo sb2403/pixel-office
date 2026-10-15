@@ -2,5 +2,8 @@
   "name": "pixel-office",
   "owner": { "name": "Spencer Barrett" },
   "description": "A live pixel-art office that shows what every Claude Code agent in your session is doing",
-  "plugins": [{ "name": "pixel-office", "source": "./pixel-office" }]
+  "plugins": [
+    { "name": "pixel-office", "source": "./pixel-office" },
+    { "name": "coordinator-guard", "source": "./coordinator-guard" }
+  ]
 }

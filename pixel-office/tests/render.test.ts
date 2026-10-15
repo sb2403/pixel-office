@@ -16,12 +16,12 @@ import {
 } from '../hooks/render'
 import type { Agent, OfficeEvent, Scene } from '../types'
 
-const spawnEv = (id: string, at: number): OfficeEvent => ({
+const spawnEv = (id: string, at: number, description = 'find auth code'): OfficeEvent => ({
   kind: 'spawned',
   id,
   parentId: MAIN,
   type: 'Explore',
-  description: 'find auth code',
+  description,
   brief: 'Find where the login flow creates a session',
   name: null,
   isTeammate: false,
@@ -158,7 +158,7 @@ describe('renderOffice', () => {
 
   test('neighbours whose name tags would collide get one over the head and one under the feet', async () => {
     // Main sits between the two helpers it is briefing, its tag right where theirs reach.
-    const s = run([spawnEv('a1', 1000), spawnEv('a2', 1000)])
+    const s = run([spawnEv('a1', 1000), spawnEv('a2', 1000, 'check hooks')])
     const row = [MAIN, 'a1', 'a2'].map(id => s.agents[id]!)
     expect(new Set(row.map(a => a.pos.y)).size).toBe(1)
     const below = tagsBelow(row, 60_000)

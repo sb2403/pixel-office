@@ -197,8 +197,28 @@ function uniqueLabel(scene: Scene, base: string): string {
   return highest === 0 ? base : `${base} ${highest + 1}`
 }
 
-const labelFor = (scene: Scene, type: string, name: string | null): string =>
-  uniqueLabel(scene, name === null || name === '' ? roleFor(type).title : asName(name))
+// What a helper is on the job for, in a few words: "Find the login code" reads as "login code". Short enough to
+// fit on a name tag.
+const TOPIC_MAX = 12
+const FILLER = /^(find|check|look|search|read|review|audit|investigate|explore|analy[sz]e|summari[sz]e|report|list|get|the|a|an|for|on|in|at|of|into|out|how|why|what|where|which|whether|if|and|to)$/i
+export function topicOf(description: string): string {
+  const words = description.split(/\s+/).filter(w => w !== '')
+  const keep = words.filter(w => !FILLER.test(w.replace(/[^A-Za-z]/g, '')))
+  const picked = (keep.length > 0 ? keep : words).slice(0, 2).join(' ')
+  return Array.from(picked).slice(0, TOPIC_MAX).join('').trim().toLowerCase()
+}
+
+// An agent the engine named keeps its name. The first of a kind is its plain job title; a later one is told apart
+// by its job, "Hooks module" rather than "Researcher 2", when we know it. The job alone is the name: a tag has
+// room for about twelve characters before it runs into its neighbour's, and the details say what kind of agent it is.
+const labelFor = (scene: Scene, type: string, name: string | null, description = ''): string => {
+  if (name !== null && name !== '') return uniqueLabel(scene, asName(name))
+  const topic = topicOf(description)
+  const title = roleFor(type).title
+  const first = uniqueLabel(scene, title)
+  if (first === title || topic === '') return first
+  return uniqueLabel(scene, `${topic[0]?.toUpperCase() ?? ''}${topic.slice(1)}`)
+}
 
 function nextDesk(scene: Scene): number {
   const used = new Set(
@@ -322,12 +342,12 @@ function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
     isBackground: ev.isBackground,
   }
   if (existing === undefined) {
-    const fresh = { ...arrive(s, ev.id, ev.type, labelFor(s, ev.type, ev.name), ev.at), ...hire }
+    const fresh = { ...arrive(s, ev.id, ev.type, labelFor(s, ev.type, ev.name, ev.description), ev.at), ...hire }
     s = brief(addAgent(s, fresh), fresh, ev)
   } else if (ev.isResume) {
     s = callBack(s, existing, ev)
   } else {
-    const label = existing.type === 'contractor' ? labelFor(s, ev.type, ev.name) : existing.label
+    const label = existing.type === 'contractor' ? labelFor(s, ev.type, ev.name, ev.description) : existing.label
     s = put(s, {
       ...existing,
       ...hire,
