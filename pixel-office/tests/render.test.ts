@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { MAIN, emptyScene, reduce } from '../hooks/model'
+import { MAIN, emptyScene, reduce, restore } from '../hooks/model'
 import {
   PUFF_MS,
   STATUS_WORDS,
@@ -14,7 +14,7 @@ import {
   renderOffice,
   tagsBelow,
 } from '../hooks/render'
-import type { OfficeEvent, Scene } from '../types'
+import type { Agent, OfficeEvent, Scene } from '../types'
 
 const spawnEv = (id: string, at: number): OfficeEvent => ({
   kind: 'spawned',
@@ -182,6 +182,40 @@ describe('renderOffice', () => {
   test('night and day differ', async () => {
     expect(isNight(new Date(2026, 9, 14, 22).getTime())).toBe(true)
     expect(isNight(new Date(2026, 9, 14, 12).getTime())).toBe(false)
+  })
+})
+
+describe('a scene saved by an older version', () => {
+  // What 0.2.2 saved: no role, name, brief, report, outcome, background flag or carried item.
+  const OLD_KEYS = ['role', 'name', 'brief', 'report', 'outcome', 'isBackground', 'carry'] as const
+  const aged = (s: Scene): Scene => ({
+    ...s,
+    agents: Object.fromEntries(
+      Object.entries(s.agents).map(([id, a]) => {
+        const old: Record<string, unknown> = { ...a }
+        for (const key of OLD_KEYS) delete old[key]
+        return [id, old as unknown as Agent]
+      }),
+    ),
+  })
+
+  test('draws and lists without a missing field getting in the way', async () => {
+    const s = aged(reduce(run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)]), { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', at: 5000 }))
+    expect(() => renderOffice(s, 5100)).toThrow()
+    const whole = restore(s)
+    expect(renderOffice(whole, 5100)).toContain('id="agent-a1"')
+    expect(orgRows(whole).map(row => row.label)).toEqual(['Main', 'Researcher'])
+    expect(whole.agents.a1!.role).toBe('Researcher')
+    // Without the flag nothing says Main waited on it, so Main is not shown coordinating.
+    expect(whole.agents.a1!.isBackground).toBe(true)
+    // The events that come next apply on top of it.
+    expect(reduce(whole, readEv('a1', 'b.ts', 6000)).agents.a1!.phase).toBe('working')
+  })
+
+  test('a scene that is already whole comes back as the same object, so it is never rewritten', async () => {
+    const s = run([spawnEv('a1', 1000)])
+    expect(restore(s)).toBe(s)
+    expect(restore(emptyScene()).agents[MAIN]!.role).toBe('Coordinator')
   })
 })
 

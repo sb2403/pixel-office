@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { OfficeEvent } from '../types'
-import { MAIN, emptyScene, needsSweep, reduce } from './model'
+import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
 import { PANE, PANE_TITLE } from './state'
 import { WAITING_TOOLS, detailOf, gist, stationFor, targetOf, todoCounts } from './stations'
@@ -56,12 +56,12 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     const epoch = office.epoch
     office.queue = []
     const isSweepTurn = office.flushes % SWEEP_EVERY === 0
-    if (batch.length === 0 && !(isSweepTurn && needsSweep(await read($, sceneAtom), now))) return
+    if (batch.length === 0 && !(isSweepTurn && needsSweep(restore(await read($, sceneAtom)), now))) return
     await update($, sceneAtom, scene => {
       // A /clear since the queue was taken makes this batch (and sweep) belong to the old conversation. The
       // updater reruns when a write misses its version, so the check holds however the two interleave.
       if (office.epoch !== epoch) return scene
-      const applied = batch.reduce(reduce, scene)
+      const applied = batch.reduce(reduce, restore(scene))
       return isSweepTurn && needsSweep(applied, now) ? reduce(applied, { kind: 'tick', at: now }) : applied
     })
   })

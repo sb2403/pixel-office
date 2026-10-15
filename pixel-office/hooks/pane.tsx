@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
-import { emptyScene } from './model'
+import { emptyScene, restore } from './model'
 import { STATUS_WORDS, agentDetails, altText, clockLabel, objectiveLine, orgRows, renderOffice } from './render'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -16,7 +16,7 @@ const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, w
 
 export function registerPane(on: On): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const scene = await read($, sceneAtom)
+    const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
     const selected = await read($, selectedAtom)
     // Reading the clock atom subscribes the pane to it: each write from the flush timer redraws the pane.

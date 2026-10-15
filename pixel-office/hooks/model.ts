@@ -56,6 +56,32 @@ export function emptyScene(): Scene {
   return { agents: { [MAIN]: main }, order: [MAIN], ticker: [], todos: null, briefing: null }
 }
 
+// Fields added to an agent since the first release, with what an agent saved without them stands for. Session
+// state outlives a hot reload of the mod, so a scene saved by an older version can meet this code.
+const AGENT_DEFAULTS = (agent: Agent): Partial<Agent> => ({
+  role: roleFor(agent.type).title,
+  name: null,
+  brief: '',
+  report: '',
+  outcome: null,
+  // Nothing says its boss waits on it, so it never makes its boss look busy.
+  isBackground: true,
+  carry: null,
+})
+const AGENT_KEYS = Object.keys(AGENT_DEFAULTS({ type: MAIN } as Agent)) as (keyof Agent)[]
+
+// The scene as this version reads it. The same object comes back when nothing is missing, so a scene that is
+// already whole is never rewritten (a write would redraw the pane).
+export function restore(scene: Scene): Scene {
+  const isWhole = (agent: Agent): boolean => AGENT_KEYS.every(key => key in agent)
+  if (Object.values(scene.agents).every(isWhole)) return scene
+  const agents: Record<string, Agent> = {}
+  for (const [id, agent] of Object.entries(scene.agents)) {
+    agents[id] = isWhole(agent) ? agent : ({ ...AGENT_DEFAULTS(agent), ...agent } as Agent)
+  }
+  return { ...scene, agents }
+}
+
 export function isWalkingAt(agent: Agent, at: number): boolean {
   return agent.walk !== null && at < agent.walk.startedAt + agent.walk.durationMs
 }
