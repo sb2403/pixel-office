@@ -32,6 +32,16 @@ function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boo
     return { value: undefined }
   })
   on('store.keys', () => ({ value: Object.keys(stored) }))
+  const toasts: string[] = []
+  const notes: { text: string; title?: string }[] = []
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.notify', ($, e) => {
+    notes.push({ text: e.text, title: e.title })
+    return { value: { isSent: true, channel: 'terminal_bell' } as never }
+  })
   const opened: string[] = []
   let latest: Scene | undefined
   const clockWrites: number[] = []
@@ -70,7 +80,7 @@ function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boo
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
-  return { clock, opened, scene: () => latest, selected: () => latestSelected, clockWrites, stored }
+  return { clock, opened, scene: () => latest, selected: () => latestSelected, clockWrites, stored, toasts, notes }
 }
 
 const endSession = (reason: 'clear' | 'prompt_input_exit') => ({ reason, sessionId: 's-1', resume: { id: 's-1' } })
@@ -509,6 +519,45 @@ test('with history on, past jobs load at the start and each job is saved as it e
   const again = stored.jobs as { task: string; tookMs: number }[]
   expect(again).toHaveLength(2)
   expect(again[1]!.tookMs).toBeGreaterThan(saved[1]!.tookMs)
+})
+
+test('reminders are off unless switched on', async ($, on) => {
+  const { clock, toasts, notes } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } })
+  await clock.advance(60_000)
+  expect(toasts).toEqual([])
+  expect(notes).toEqual([])
+})
+
+test('with reminders on, an agent waiting on you is said once, after 30 seconds', { options: { notify: 'after-30s' } }, async ($, on) => {
+  const { clock, toasts, notes } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } })
+  await clock.advance(20_000)
+  expect(notes).toEqual([])
+  await clock.advance(12_000)
+  expect(toasts).toEqual(['Main is waiting for your permission'])
+  expect(notes).toEqual([{ text: 'Main is waiting for your permission', title: 'Pixel Office' }])
+  // Not again for the same wait.
+  await clock.advance(120_000)
+  expect(notes).toHaveLength(1)
+  // A wait that ends and begins again is a new wait.
+  await $.turn.start({ text: 'go on', turnId: 'turn-2' })
+  await clock.advance(2000)
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf dist' } })
+  await clock.advance(33_000)
+  expect(notes).toHaveLength(2)
+})
+
+test("a helper's wait names the helper and what it waits for", { options: { notify: 'after-30s' } }, async ($, on) => {
+  const { clock, notes } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' }, agent_id: 'agent-1' } as never)
+  await clock.advance(32_000)
+  expect(notes.map(n => n.text)).toEqual(['Researcher is waiting for your permission'])
 })
 
 test('the time on the job of a selected agent keeps counting', async ($, on) => {

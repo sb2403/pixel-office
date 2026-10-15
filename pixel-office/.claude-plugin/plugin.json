@@ -21,6 +21,13 @@
       "description": "Keep a short record of each job (the start of your message, how long it took, how many helpers and tokens) on this computer, across sessions",
       "default": "off",
       "options": ["off", "last-20"]
+    },
+    "notify": {
+      "type": "string",
+      "title": "Remind me when an agent waits on me",
+      "description": "After an agent has waited 30 seconds for your answer or permission, say so once, with a toast and a notification",
+      "default": "off",
+      "options": ["off", "after-30s"]
     }
   }
 }

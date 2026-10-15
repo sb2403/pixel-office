@@ -5,6 +5,7 @@ import type { JobRecord, OfficeEvent, Usage } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
 import { HISTORY_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
+import { nowOf } from './render'
 import { PANE, PANE_TITLE } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
@@ -16,6 +17,10 @@ export const TASK_MAX = 120
 const SWEEP_EVERY = 15
 const CLOCK_EVERY = 3
 const QUEUE_MAX = 500
+// With reminders on: how long an agent waits on you before the office says so, once per wait.
+export const REMIND_AFTER_MS = 30_000
+export const REMIND_TITLE = 'Pixel Office'
+
 // The history, when it is switched on, lives under one key of the mod's store.
 export const HISTORY_KEY = 'jobs'
 const UNTRACKED = new Set(['Agent', 'Task'])
@@ -57,6 +62,10 @@ type Office = {
   epoch: number
   keepsHistory: boolean
   hasJobToSave: boolean
+  reminds: boolean
+  // When each agent now waiting on you started to, and which of them were reminded about this wait.
+  waitingSince: Map<string, number>
+  reminded: Set<string>
 }
 
 // The engine only lets `$` travel into functions declared at the top of this file, so the helpers that
@@ -78,6 +87,29 @@ async function saveJob($: EngineInterface): Promise<void> {
   const list = withRecord(await read($, historyAtom), jobRecord(recap))
   await $.store.set(HISTORY_KEY, list)
   await update($, historyAtom, () => list)
+}
+
+// An agent that has waited on you for a while is said once: a toast, which shows over the transcript wherever the
+// session is drawn, and a native notification, which the person's channel raises in a terminal (in the desktop
+// app only their own notification hooks run). A wait that ends and begins again is a new wait.
+async function remind($: EngineInterface, office: Office): Promise<void> {
+  const scene = restore(await read($, sceneAtom))
+  const now = await $.clock.now()
+  const waiting = Object.values(scene.agents).filter(a => a.phase === 'waiting')
+  for (const id of [...office.waitingSince.keys()]) {
+    if (waiting.some(a => a.id === id)) continue
+    office.waitingSince.delete(id)
+    office.reminded.delete(id)
+  }
+  for (const agent of waiting) {
+    const since = office.waitingSince.get(agent.id) ?? now
+    office.waitingSince.set(agent.id, since)
+    if (now - since < REMIND_AFTER_MS || office.reminded.has(agent.id)) continue
+    office.reminded.add(agent.id)
+    const text = `${agent.label} is ${nowOf(scene, agent)}`
+    $.ui.toast(text, { timeoutMs: 10_000 })
+    await $.ui.notify(text, { title: REMIND_TITLE })
+  }
 }
 
 async function flush($: EngineInterface, office: Office): Promise<void> {
@@ -123,6 +155,9 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     office.hasJobToSave = false
     await saveJob($)
   })
+  await quietly(async () => {
+    if (office.reminds && office.flushes % CLOCK_EVERY === 0) await remind($, office)
+  })
   // The session and spawn hooks only ask for the pane; it opens here, off their path, and a failed open tries again next flush.
   await quietly(async () => {
     if (office.wantsOpen && !office.isOpened) await openPane($, office)
@@ -141,6 +176,9 @@ export const register: Register = (on, options) => {
     epoch: 0,
     keepsHistory: String(options.history ?? 'off') === 'last-20',
     hasJobToSave: false,
+    reminds: String(options.notify ?? 'off') === 'after-30s',
+    waitingSince: new Map(),
+    reminded: new Set(),
   }
 
   const push = (ev: OfficeEvent): void => {

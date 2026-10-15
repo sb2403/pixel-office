@@ -144,6 +144,11 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 - `off` (default): nothing is kept once the session ends.
 - `last-20`: the newest 20 jobs are kept on this computer, in the mod's own store: the start of the message that began each one (up to 120 characters), when it started, how long it took, how many helpers and how many at once, and its tokens. The recap lists them under "Earlier jobs".
 
+**`notify`** decides whether the office reminds you when an agent is waiting on you:
+
+- `off` (default): no reminders.
+- `after-30s`: once an agent has waited 30 seconds for your answer, permission or plan approval, the office says so once, naming the agent ("Researcher is waiting for your permission"). It shows a toast over the conversation, and raises a notification through your notification setting. In a terminal that is a desktop notification or a bell, as your terminal does them; the Claude desktop app shows the toast, and only your own notification hooks run there. Claude Code may already notify you when it needs you; if the two double up, leave this off.
+
 Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
 
 ```bash
