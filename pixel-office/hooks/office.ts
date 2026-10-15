@@ -3,12 +3,12 @@ import { HEIGHT, WIDTH } from './stations'
 const C = {
   wall: '#6b6658',
   wallTrim: '#444441',
-  wood: '#c9a36b',
-  woodDark: '#a8834f',
+  wood: '#bf9d6c',
+  woodDark: '#ad8d60',
   carpet: '#7a8fa8',
   carpetDark: '#6d8199',
-  tile: '#e6e1d3',
-  tileLine: '#d3cdbb',
+  tile: '#dfe8e3',
+  tileLine: '#c9d6cf',
   grate: '#3d3a35',
   grateLine: '#4a4740',
   glass: '#b5d4f4',
@@ -51,6 +51,19 @@ const C = {
   leaf: '#3b6d11',
   leafLight: '#639922',
   pot: '#993c1d',
+  shadow: '#2a2018',
+  officeCarpet: '#a7a89f',
+  officeCarpetLine: '#9b9c92',
+  libraryCarpet: '#70805f',
+  libraryCarpetDark: '#667555',
+  concrete: '#bdb7a6',
+  marble: '#e9e3d1',
+  marbleDark: '#d6cfb9',
+  wallCap: '#8c8676',
+  baseboard: '#3a3830',
+  sill: '#a8a291',
+  threshold: '#ece0c4',
+  deskLit: '#a46f45',
 } as const
 
 const n = (v: number): number => Math.round(v * 100) / 100
@@ -60,6 +73,9 @@ export const rect = (x: number, y: number, w: number, h: number, fill: string, e
 
 const use = (id: string, x: number, y: number): string => `<use href="#${id}" x="${x}" y="${y}"/>`
 const GLASS = ' fill-opacity="0.6"'
+// Everything is lit from the top left, so a shadow falls down and to the right of what casts it.
+const SHADE = ' fill-opacity="0.22"'
+const shade = (x: number, y: number, w: number, h: number): string => rect(x, y, w, h, C.shadow, SHADE)
 const BOOKS = ['#a32d2d', '#185fa5', '#3b6d11', '#ba7517', '#534ab7', '#993556']
 
 function shelf(): string {
@@ -79,12 +95,15 @@ export const OFFICE_DEFS =
   `<pattern id="po-wood" width="8" height="4" patternUnits="userSpaceOnUse">${rect(0, 0, 8, 4, C.wood)}${rect(0, 3, 8, 1, C.woodDark)}${rect(5, 0, 1, 3, C.woodDark)}</pattern>` +
   `<pattern id="po-carpet" width="4" height="4" patternUnits="userSpaceOnUse">${rect(0, 0, 4, 4, C.carpet)}${rect(0, 0, 2, 2, C.carpetDark)}${rect(2, 2, 2, 2, C.carpetDark)}</pattern>` +
   `<pattern id="po-tile" width="6" height="6" patternUnits="userSpaceOnUse">${rect(0, 0, 6, 6, C.tile)}${rect(0, 0, 6, 1, C.tileLine)}${rect(0, 0, 1, 6, C.tileLine)}</pattern>` +
+  `<pattern id="po-officefloor" width="8" height="8" patternUnits="userSpaceOnUse">${rect(0, 0, 8, 8, C.officeCarpet)}${rect(0, 7, 8, 1, C.officeCarpetLine)}${rect(7, 0, 1, 8, C.officeCarpetLine)}</pattern>` +
+  `<pattern id="po-libraryfloor" width="4" height="4" patternUnits="userSpaceOnUse">${rect(0, 0, 4, 4, C.libraryCarpet)}${rect(0, 0, 2, 2, C.libraryCarpetDark)}${rect(2, 2, 2, 2, C.libraryCarpetDark)}</pattern>` +
+  `<pattern id="po-marble" width="8" height="8" patternUnits="userSpaceOnUse">${rect(0, 0, 8, 8, C.marble)}${rect(0, 0, 4, 4, C.marbleDark)}${rect(4, 4, 4, 4, C.marbleDark)}</pattern>` +
   `<pattern id="po-grate" width="4" height="4" patternUnits="userSpaceOnUse">${rect(0, 0, 4, 4, C.grate)}${rect(0, 0, 4, 1, C.grateLine)}${rect(0, 0, 1, 4, C.grateLine)}</pattern>` +
-  `<g id="po-desk">${rect(0, 0, 16, 6, C.deskTop)}${rect(0, 6, 16, 1, C.deskEdge)}${rect(1, 7, 1, 3, C.deskEdge)}${rect(14, 7, 1, 3, C.deskEdge)}${rect(5, -5, 6, 5, C.monitor)}${rect(6, -4, 4, 3, C.screen)}${rect(7, 0, 2, 1, C.monitor)}${rect(2, 2, 4, 1, '#d3d1c7')}</g>` +
-  `<g id="po-cab">${rect(0, 0, 6, 20, C.cabinet)}${rect(1, 1, 4, 5, C.cabinetFace)}${rect(1, 7, 4, 5, C.cabinetFace)}${rect(1, 13, 4, 6, C.cabinetFace)}${rect(2, 3, 2, 1, C.handle)}${rect(2, 9, 2, 1, C.handle)}${rect(2, 15, 2, 1, C.handle)}</g>` +
-  `<g id="po-shelf">${shelf()}</g>` +
-  `<g id="po-rack">${rect(0, 0, 10, 26, C.rack)}${rect(1, 1, 8, 24, C.rackFace)}${[3, 7, 11, 15, 19].map(y => rect(2, y, 6, 2, C.rack)).join('')}</g>` +
-  `<g id="po-plant">${rect(1, 8, 4, 4, C.pot)}${rect(0, 2, 6, 6, C.leaf)}${rect(1, 0, 2, 3, C.leafLight)}${rect(3, 1, 2, 3, C.leaf)}${rect(2, 4, 1, 2, C.leafLight)}</g>` +
+  `<g id="po-desk">${shade(1, 8, 16, 3)}${rect(0, 0, 16, 6, C.deskTop)}${rect(0, 0, 16, 1, C.deskLit)}${rect(0, 6, 16, 2, C.deskEdge)}${rect(1, 7, 1, 3, C.deskEdge)}${rect(14, 7, 1, 3, C.deskEdge)}${rect(5, -5, 6, 5, C.monitor)}${rect(6, -4, 4, 3, C.screen)}${rect(7, 0, 2, 1, C.monitor)}${rect(2, 2, 4, 1, '#d3d1c7')}</g>` +
+  `<g id="po-cab">${shade(1, 20, 6, 2)}${shade(6, 2, 1, 19)}${rect(0, 0, 6, 20, C.cabinet)}${rect(0, 0, 6, 1, C.cabinetFace)}${rect(1, 1, 4, 5, C.cabinetFace)}${rect(1, 7, 4, 5, C.cabinetFace)}${rect(1, 13, 4, 6, C.cabinetFace)}${rect(2, 3, 2, 1, C.handle)}${rect(2, 9, 2, 1, C.handle)}${rect(2, 15, 2, 1, C.handle)}</g>` +
+  `<g id="po-shelf">${shade(1, 22, 8, 2)}${shade(8, 2, 1, 21)}${shelf()}${rect(0, 0, 8, 1, C.wood)}</g>` +
+  `<g id="po-rack">${shade(1, 26, 10, 2)}${shade(10, 2, 1, 25)}${rect(0, 0, 10, 26, C.rack)}${rect(0, 0, 10, 1, C.steelDark)}${rect(1, 1, 8, 24, C.rackFace)}${[3, 7, 11, 15, 19].map(y => rect(2, y, 6, 2, C.rack)).join('')}</g>` +
+  `<g id="po-plant">${shade(1, 11, 7, 2)}${rect(1, 8, 4, 4, C.pot)}${rect(0, 8, 6, 1, C.deskEdge)}${rect(0, 2, 6, 6, C.leaf)}${rect(1, 0, 2, 3, C.leafLight)}${rect(3, 1, 2, 3, C.leaf)}${rect(2, 4, 1, 2, C.leafLight)}</g>` +
   '</defs>'
 
 function floors(): string {
@@ -92,22 +111,29 @@ function floors(): string {
     rect(0, 10, WIDTH, HEIGHT - 10, 'url(#po-wood)') +
     rect(0, 10, 62, 48, 'url(#po-carpet)') +
     rect(0, 62, 62, 44, 'url(#po-tile)') +
-    rect(0, 108, 70, 42, 'url(#po-tile)') +
+    rect(0, 108, 70, 42, 'url(#po-marble)') +
+    rect(70, 12, 100, 62, 'url(#po-officefloor)') +
+    rect(172, 10, 68, 40, 'url(#po-libraryfloor)') +
+    rect(172, 50, 40, 26, C.concrete) +
     rect(176, 96, 64, 54, 'url(#po-grate)')
   )
 }
 
 function walls(isNight: boolean): string {
   const city = isNight ? C.cityNight : C.city
-  let out = rect(0, 0, WIDTH, 9, C.wall) + rect(0, 9, WIDTH, 1, C.wallTrim)
+  let out = rect(0, 0, WIDTH, 9, C.wall) + rect(0, 0, WIDTH, 1, C.wallCap) + rect(0, 8, WIDTH, 1, C.baseboard) + rect(0, 9, WIDTH, 1, C.wallTrim)
+  out += rect(0, 10, WIDTH, 2, C.shadow, ' fill-opacity="0.2"')
   for (const x of [112, 128, 144, 160]) {
     out += rect(x, 1, 14, 7, C.frame) + rect(x + 1, 2, 12, 5, isNight ? C.nightSky : C.daySky)
+    out += rect(x - 1, 8, 16, 1, C.sill)
     out += rect(x + 2, 5, 3, 2, city) + rect(x + 6, 4, 2, 3, city) + rect(x + 9, 5, 3, 2, city)
     if (isNight) out += rect(x + 6, 5, 1, 1, '#fac775') + rect(x + 10, 6, 1, 1, '#fac775')
   }
   out += `<g id="po-zone-taskboard">${rect(72, 1, 32, 8, C.frame)}${rect(73, 2, 30, 6, C.cork)}</g>`
+  out += shade(64, 12, 2, 46) + shade(0, 60, 48, 2) + shade(178, 98, 2, 52) + shade(190, 98, 50, 2)
   out += rect(62, 10, 2, 48, C.glass, GLASS) + rect(0, 58, 48, 2, C.glass, GLASS) + rect(48, 58, 1, 2, C.frame)
   out += rect(176, 98, 2, 52, C.glass, GLASS) + rect(190, 96, 50, 2, C.glass, GLASS) + rect(189, 96, 1, 2, C.frame)
+  out += rect(48, 58, 14, 2, C.threshold) + rect(176, 96, 14, 2, C.threshold) + rect(28, 106, 9, 2, C.threshold)
   out += rect(0, 106, 28, 2, C.partition) + rect(37, 106, 25, 2, C.partition) + rect(76, 47, 18, 2, C.partition) + rect(100, 47, 16, 2, C.partition) + rect(122, 47, 16, 2, C.partition) + rect(144, 47, 18, 2, C.partition)
   return out
 }
@@ -116,7 +142,9 @@ function cornerOffice(): string {
   return (
     '<g id="po-zone-office">' +
     use('po-shelf', 3, 12) +
+    shade(15, 41, 28, 5) +
     rect(14, 34, 28, 6, C.deskTop) +
+    rect(14, 34, 28, 1, C.deskLit) +
     rect(14, 40, 28, 1, C.deskEdge) +
     rect(15, 41, 1, 4, C.deskEdge) +
     rect(40, 41, 1, 4, C.deskEdge) +
@@ -149,7 +177,7 @@ function library(): string {
 }
 
 function mailroom(): string {
-  let out = `<g id="po-zone-mailroom">${rect(178, 52, 28, 9, C.cubby)}`
+  let out = `<g id="po-zone-mailroom">${shade(179, 69, 28, 2)}${rect(178, 52, 28, 9, C.cubby)}`
   for (const x of [185, 192, 199]) out += rect(x, 52, 1, 9, C.woodDark)
   out += rect(178, 56, 28, 1, C.woodDark)
   out += rect(178, 62, 28, 6, C.counter) + rect(178, 68, 28, 1, C.woodDark)
@@ -161,6 +189,8 @@ function phoneBooths(): string {
   let out = '<g id="po-zone-phone">'
   for (const x of [214, 228]) {
     out +=
+      shade(x + 1, 80, 12, 2) +
+      shade(x + 12, 54, 1, 27) +
       rect(x, 52, 12, 28, C.boothFrame) +
       rect(x + 1, 55, 10, 24, C.glass, GLASS) +
       rect(x + 1, 53, 10, 2, C.boothTop) +
@@ -189,13 +219,13 @@ function meetingRoom(): string {
   out += rect(94, 98, 38, 8, C.frame) + rect(95, 99, 36, 6, C.board) + rect(96, 106, 1, 4, C.frame) + rect(129, 106, 1, 4, C.frame)
   for (const x of [96, 108, 120]) out += rect(x, 109, 4, 3, C.chair)
   for (const x of [96, 108, 120, 132]) out += rect(x, 128, 4, 3, C.chair)
-  out += rect(92, 116, 42, 10, C.deskTop) + rect(92, 126, 42, 1, C.deskEdge)
+  out += shade(93, 127, 42, 3) + rect(92, 116, 42, 10, C.deskTop) + rect(92, 116, 42, 1, C.deskLit) + rect(92, 126, 42, 2, C.deskEdge)
   return `${out}</g>`
 }
 
 function breakRoom(): string {
   let out = '<g id="po-zone-breakroom">'
-  out += rect(2, 64, 10, 18, C.vending) + rect(3, 66, 8, 10, C.glass)
+  out += shade(3, 82, 10, 2) + shade(12, 66, 1, 17) + shade(17, 75, 24, 2) + rect(2, 64, 10, 18, C.vending) + rect(3, 66, 8, 10, C.glass)
   for (const [x, y, fill] of [
     [4, 67, '#e24b4a'],
     [7, 67, '#fac775'],
@@ -207,13 +237,14 @@ function breakRoom(): string {
   out += rect(16, 68, 24, 6, C.counter) + rect(16, 74, 24, 1, C.woodDark)
   out += rect(21, 61, 8, 7, C.monitor) + rect(23, 63, 4, 2, '#e24b4a') + rect(24, 66, 2, 2, '#ffffff')
   out += rect(34, 60, 6, 14, C.steel) + rect(35, 60, 4, 5, '#85b7eb')
-  out += rect(4, 90, 26, 3, C.couchDark) + rect(4, 93, 26, 6, C.couch) + rect(3, 91, 2, 8, C.couchDark) + rect(29, 91, 2, 8, C.couchDark)
+  out += shade(5, 99, 27, 2) + rect(4, 90, 26, 3, C.couchDark) + rect(4, 93, 26, 6, C.couch) + rect(3, 91, 2, 8, C.couchDark) + rect(29, 91, 2, 8, C.couchDark)
   return `${out}</g>`
 }
 
 function lobby(): string {
   return (
     '<g id="po-zone-elevator">' +
+    shade(4, 136, 26, 2) +
     rect(3, 110, 26, 26, C.steelDark) +
     rect(5, 112, 11, 24, C.steel) +
     rect(16, 112, 11, 24, C.steel) +
@@ -223,10 +254,28 @@ function lobby(): string {
     rect(29, 122, 1, 2, '#fac775') +
     '</g>' +
     '<g id="po-zone-reception">' +
+    shade(37, 132, 26, 2) +
     rect(36, 123, 26, 2, C.receptionTop) +
     rect(36, 125, 26, 7, C.reception) +
     rect(46, 120, 4, 3, '#ef9f27') +
     rect(47, 119, 2, 1, '#fac775') +
+    '</g>'
+  )
+}
+
+// Small stencils on the floor, so each zone is named without a click.
+function labels(): string {
+  const tag = (text: string, x: number, y: number): string =>
+    `<text x="${x}" y="${y}" font-size="3" text-anchor="middle" fill="#000000" fill-opacity="0.45">${text}</text>`
+  return (
+    '<g id="po-labels">' +
+    tag('DESKS', 120, 20) +
+    tag('LIBRARY', 206, 46) +
+    tag('MAIL', 192, 74) +
+    tag('SERVERS', 215, 147) +
+    tag('MEETING', 115, 148) +
+    tag('BREAK ROOM', 31, 104) +
+    tag('LOBBY', 35, 147) +
     '</g>'
   )
 }
@@ -248,6 +297,7 @@ export function officeBase(isNight: boolean): string {
     meetingRoom(),
     breakRoom(),
     lobby(),
+    labels(),
   ].join('')
   baseCache.set(isNight, svg)
   return svg
