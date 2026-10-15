@@ -133,6 +133,16 @@ describe('work, errors and waiting', () => {
     expect(other.agents[MAIN]!.station).toBe('reception')
   })
 
+  test('an agent waiting on your permission stays waiting, however long you take', async () => {
+    const asked = run([{ kind: 'turnStarted', isContinuation: false, task: '', at: 1000 }, { kind: 'waiting', agentId: MAIN, tool: 'Bash', at: 2000 }])
+    expect(needsSweep(asked, 2000 + 2 * IDLE_MS)).toBe(false)
+    const later = reduce(asked, { kind: 'tick', at: 2000 + 2 * IDLE_MS })
+    expect(later.agents[MAIN]!.phase).toBe('waiting')
+    expect(later.agents[MAIN]!.station).toBe('reception')
+    // Its next turn ends the wait.
+    expect(reduce(later, { kind: 'turnStarted', isContinuation: true, task: '', at: 3000 + 2 * IDLE_MS }).agents[MAIN]!.phase).toBe('working')
+  })
+
   test('SendMessage walks to the recipient with an envelope, hands it over and walks back', async () => {
     const s = run([spawn('a1', 1000), spawn('a2', 1000, { type: 'Plan' })])
     const plan = s.agents.a2!

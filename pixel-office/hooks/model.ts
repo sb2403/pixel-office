@@ -523,7 +523,8 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
 // A boss waiting on its helpers is at work however long they take, so the sweep may walk it home but never
 // sends it to the break room.
 function sweepTarget(agent: Agent, now: number, isWaitingOnTeam: boolean): StationId | null {
-  if (agent.activity !== null || agent.phase === 'gone') return null
+  // An agent waiting on you stays at reception until you answer, however long that takes.
+  if (agent.activity !== null || agent.phase === 'gone' || agent.phase === 'waiting') return null
   const quiet = now - agent.lastEventAt
   // A briefing normally ends with the agent's first tool; one that never comes must not hold the room forever.
   if (agent.phase === 'briefing') return quiet >= BRIEFING_MAX_MS ? homeOf(agent) : null
