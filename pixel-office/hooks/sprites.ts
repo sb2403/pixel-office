@@ -45,7 +45,8 @@ export function personSvg(look: Look, variant: Variant, walkMs: number): string 
       `values="0,0;0,-1;0,0" dur="0.3s" begin="${begin}s" repeatDur="${walkMs}ms"/></g>`
     )
   }
-  return `<g transform="translate(-4,-12)">${rle(BODY[variant], colors)}${leg(2, 0)}${leg(5, 0.15)}</g>`
+  const ground = '<rect x="-4" y="-1" width="8" height="2" fill="#000000" fill-opacity="0.22"/><rect x="-3" y="1" width="6" height="1" fill="#000000" fill-opacity="0.14"/>'
+  return `${ground}<g transform="translate(-4,-12)">${rle(BODY[variant], colors)}${leg(2, 0)}${leg(5, 0.15)}</g>`
 }
 
 const ICONS: Record<StationId, Grid> = {
