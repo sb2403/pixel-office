@@ -122,7 +122,7 @@ function checkScene(s: Scene): void {
   const digger = agent(DIGGER)
   const main = agent(MAIN)
   expect(explore.label === 'Researcher' && plan.label === 'Planner' && tester.label === 'Assistant', 'helpers go by their roles')
-  expect(digger.label === 'Researcher 2' && digger.parentId === TESTER, 'the Assistant hired a second Researcher of its own')
+  expect(digger.label === 'Test fails' && digger.parentId === TESTER, 'the Assistant hired a second Researcher of its own')
   expect(explore.phase === 'gone' && isWalkingAt(explore, NOW), 'the Researcher is walking out after reporting')
   expect(explore.carry?.item === 'report' && NOW < explore.carry.until, 'the Researcher still carries its report to Main')
   expect(plan.station === 'library' && plan.activity?.target === 'session.ts' && !isWalkingAt(plan, NOW), 'the Planner reads session.ts in the library')
@@ -167,7 +167,7 @@ const finished: Scene = FINISH.reduce(reduce, scene)
 const recap = recapOf(finished, DONE_AT)
 if (recap === null) throw new Error('The demo job has no recap')
 expect(!recap.isOpen && recap.helpers === 4 && recap.peak === 4, 'the recap shows four helpers, all four at work at once')
-expect(recap.lanes.map(l => l.depth).join() === '0,1,1,1,2', 'the recap nests Researcher 2 under the Assistant')
+expect(recap.lanes.map(l => l.depth).join() === '0,1,1,1,2', 'the recap nests Test fails under the Assistant')
 expect(recapSummary(recap).some(line => line.includes('faster than one after another')), 'the recap says what working in parallel bought')
 
 // ---------------------------------------------------------------------------------------------------
