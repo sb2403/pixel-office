@@ -11,7 +11,9 @@ export type Eta = { typicalMs: number; samples: number; leftMs: number }
 const isOut = (a: Agent): boolean => a.phase === 'arriving' || a.phase === 'briefing' || a.phase === 'working'
 
 export function etaOf(scene: Scene, agent: Agent, now: number): Eta | null {
-  if (agent.id === MAIN || agent.isTeammate || agent.isBackground || !isOut(agent)) return null
+  // A background helper counts: the Agent tool starts helpers in the background by default, and those are the ones
+  // worth an estimate. A teammate is a standing colleague, not an errand.
+  if (agent.id === MAIN || agent.isTeammate || !isOut(agent)) return null
   const took = Object.values(scene.agents)
     .filter(a => a.id !== agent.id && a.type === agent.type && a.phase === 'gone' && a.outcome === 'reported' && !a.isTeammate && a.goneAt !== null)
     // To the moment it handed its report in: `goneAt` is later by the walk out to the elevator.
