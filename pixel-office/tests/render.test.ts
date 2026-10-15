@@ -133,7 +133,7 @@ describe('renderOffice', () => {
   })
 
   test('a boss waiting on its helpers says who it is waiting on', async () => {
-    const one = run([{ kind: 'turnStarted', isContinuation: false, at: 500 }, spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    const one = run([{ kind: 'turnStarted', isContinuation: false, task: '', at: 500 }, spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
     expect(groupOf(renderOffice(one, 60_000), MAIN)).toContain('>waiting on Researcher</text>')
     const two = reduce(one, spawnEv('a2', 1200))
     expect(groupOf(renderOffice(reduce(two, readEv('a2', 'b.ts', 1300)), 60_000), MAIN)).toContain('>waiting on 2</text>')
@@ -247,7 +247,7 @@ describe('labels', () => {
       at: 2,
     })
     expect(orgRows(held)[0]).toMatchObject({ status: 'waiting', now: 'waiting for your permission' })
-    const resting = run([{ kind: 'turnStarted', isContinuation: false, at: 1 }, { kind: 'turnEnded', usage: null, at: 2 }])
+    const resting = run([{ kind: 'turnStarted', isContinuation: false, task: '', at: 1 }, { kind: 'turnEnded', usage: null, at: 2 }])
     expect(orgRows(resting)[0]).toMatchObject({ status: 'idle', now: 'ready for your next message' })
   })
 

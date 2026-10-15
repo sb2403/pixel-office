@@ -17,9 +17,21 @@ const PANE_PROPS = {
 const FLUSH = 1100
 
 // The options object is read as the hooks run, so a test can break something part way through.
-function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boolean } = {}) {
+function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boolean; stored?: Record<string, unknown> } = {}) {
   const clock = mock.clock(on, { now: new Date(2026, 9, 14, 12, 0).getTime() })
-  mock.store(on)
+  // The world keeps the plugin's store itself, as it answers its other calls, so a test can read what was kept.
+  // Values go in and come out as JSON, as the engine's do.
+  const stored: Record<string, unknown> = { ...options.stored }
+  on('store.get', ($, e) => ({ value: stored[e.key] }))
+  on('store.set', ($, e) => {
+    stored[e.key] = JSON.parse(JSON.stringify(e.value)) as unknown
+    return { value: undefined }
+  })
+  on('store.delete', ($, e) => {
+    delete stored[e.key]
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: Object.keys(stored) }))
   const opened: string[] = []
   let latest: Scene | undefined
   const clockWrites: number[] = []
@@ -58,7 +70,7 @@ function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boo
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
-  return { clock, opened, scene: () => latest, selected: () => latestSelected, clockWrites }
+  return { clock, opened, scene: () => latest, selected: () => latestSelected, clockWrites, stored }
 }
 
 const endSession = (reason: 'clear' | 'prompt_input_exit') => ({ reason, sessionId: 's-1', resume: { id: 's-1' } })
@@ -444,6 +456,59 @@ test('a long brief and report can be read in full from the details box', async (
   await ui.press({ key: 'agent-main' })
   await ui.press({ key: 'agent-agent-1' })
   expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
+})
+
+test('the recap of this job opens from its button and tells the story in words and a picture', async ($, on) => {
+  const { clock, stored } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  // Before the first message there is no job, so no button.
+  expect(await ui.find({ type: 'Button', key: 'job' })).toBeUndefined()
+  await $.turn.start({ text: 'Fix the login bug', turnId: 'turn-1' })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(5000)
+  await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer' })
+  await clock.advance(5000)
+  await $.turn.complete({ answer: 'done', durationMs: 5, isAborted: false, turnId: 'turn-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+  expect(await ui.find({ type: 'Text', text: /^This job: Fix the login bug$/ })).toBeUndefined()
+  await ui.press({ key: 'job' })
+  expect(await ui.find({ type: 'Text', text: /^This job: Fix the login bug$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Took \d+s · 1 helper, up to 1 at once$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^  Researcher: \d+s, handed in its report$/ })).toBeDefined()
+  const pictures = await ui.findAll({ type: 'Svg' })
+  expect(pictures).toHaveLength(2)
+  expect(String(pictures[1]?.props.alt)).toContain('Researcher')
+  // History is off unless switched on: nothing is kept past the session.
+  expect(await ui.find({ type: 'Text', text: /^Earlier jobs$/ })).toBeUndefined()
+  expect(stored.jobs).toBeUndefined()
+  // The terminal gets the summary as text.
+  const terminal = await $.ui.mount({ plugin: 'pixel-office', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  expect(await terminal.find({ type: 'Text', text: /^This job: Fix the login bug$/ })).toBeDefined()
+})
+
+test('with history on, past jobs load at the start and each job is saved as it ends', { options: { history: 'last-20' } }, async ($, on) => {
+  const earlier = { startedAt: new Date(2026, 9, 13, 9, 30).getTime(), task: 'write the docs', tookMs: 95_000, helpers: 2, peak: 2, tokens: 61_000 }
+  const { clock, stored } = world(on, { stored: { jobs: [earlier, { startedAt: 'broken' }] } })
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'Fix the login bug', turnId: 'turn-1' })
+  await clock.advance(4000)
+  await $.turn.complete({ answer: 'done', durationMs: 5, isAborted: false, turnId: 'turn-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+  const saved = stored.jobs as { task: string; tookMs: number }[]
+  expect(saved.map(r => r.task)).toEqual(['write the docs', 'Fix the login bug'])
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await ui.press({ key: 'job' })
+  expect(await ui.find({ type: 'Text', text: /^Earlier jobs$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^13 Oct 09:30 write the docs: took 1m 35s, 2 helpers, 61k tokens$/ })).toBeDefined()
+  // A turn that carries on updates the same record instead of adding one.
+  await $.turn.start({ text: '', turnId: 'turn-2' })
+  await clock.advance(2000)
+  await $.turn.complete({ answer: 'more', durationMs: 5, isAborted: false, turnId: 'turn-2', reason: 'answer' })
+  await clock.advance(FLUSH)
+  const again = stored.jobs as { task: string; tookMs: number }[]
+  expect(again).toHaveLength(2)
+  expect(again[1]!.tookMs).toBeGreaterThan(saved[1]!.tookMs)
 })
 
 test('the time on the job of a selected agent keeps counting', async ($, on) => {

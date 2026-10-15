@@ -62,6 +62,8 @@ export type Agent = {
   lastErrorAt: number | null
   lastEventAt: number
   arrivedAt: number
+  // When it handed in its report this stint; null while it works.
+  doneAt: number | null
   goneAt: number | null
   carry: Carry | null
   look: Look
@@ -72,12 +74,20 @@ export type Agent = {
 // hand-back, a message, a wait on you, an error), which are kept until newer lines push them out.
 export type TickerLine = { at: number; text: string; routineOf: string | null }
 
+// One job: everything from a message you send until the next one. A turn that carries on without a new message
+// (a background helper reporting in, say) belongs to the same job. `task` is the start of your message.
+export type Job = { startedAt: number; endedAt: number | null; task: string; mainUsage: Usage | null }
+
+// A finished job as the history keeps it, across sessions, when that is switched on.
+export type JobRecord = { startedAt: number; task: string; tookMs: number; helpers: number; peak: number; tokens: number | null }
+
 export type Scene = {
   agents: Record<string, Agent>
   order: string[]
   ticker: TickerLine[]
   todos: { done: number; open: number } | null
   briefing: string | null
+  job: Job | null
 }
 
 export type OfficeEvent =
@@ -98,7 +108,7 @@ export type OfficeEvent =
   | { kind: 'toolStarted'; agentId: string; tool: string; target: string; detail: string; callId: string; at: number }
   | { kind: 'toolEnded'; agentId: string; callId: string; isError: boolean; at: number }
   | { kind: 'waiting'; agentId: string | null; tool: string; at: number }
-  | { kind: 'turnStarted'; isContinuation: boolean; at: number }
+  | { kind: 'turnStarted'; isContinuation: boolean; task: string; at: number }
   | { kind: 'turnEnded'; usage: Usage | null; at: number }
   | {
       kind: 'handedBack'
@@ -120,6 +130,8 @@ declare module 'claude-code' {
       clock: number
       // Which of the selected agent's texts the details box shows in full.
       expanded: 'brief' | 'report' | null
+      jobOpen: boolean
+      history: JobRecord[]
     }
   }
 }

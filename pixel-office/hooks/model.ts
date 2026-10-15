@@ -53,11 +53,12 @@ export function emptyScene(): Scene {
     lastErrorAt: null,
     lastEventAt: 0,
     arrivedAt: 0,
+    doneAt: null,
     goneAt: null,
     carry: null,
     look: lookFor('main', MAIN),
   }
-  return { agents: { [MAIN]: main }, order: [MAIN], ticker: [], todos: null, briefing: null }
+  return { agents: { [MAIN]: main }, order: [MAIN], ticker: [], todos: null, briefing: null, job: null }
 }
 
 // Fields added to an agent since the first release, with what an agent saved without them stands for. Session
@@ -72,6 +73,7 @@ const AGENT_DEFAULTS = (agent: Agent): Partial<Agent> => ({
   isBackground: true,
   carry: null,
   usage: null,
+  doneAt: null,
 })
 const AGENT_KEYS = Object.keys(AGENT_DEFAULTS({ type: MAIN } as Agent)) as (keyof Agent)[]
 
@@ -79,12 +81,13 @@ const AGENT_KEYS = Object.keys(AGENT_DEFAULTS({ type: MAIN } as Agent)) as (keyo
 // already whole is never rewritten (a write would redraw the pane).
 export function restore(scene: Scene): Scene {
   const isWhole = (agent: Agent): boolean => AGENT_KEYS.every(key => key in agent)
-  if (Object.values(scene.agents).every(isWhole)) return scene
+  const hasJob = 'job' in scene
+  if (hasJob && Object.values(scene.agents).every(isWhole)) return scene
   const agents: Record<string, Agent> = {}
   for (const [id, agent] of Object.entries(scene.agents)) {
     agents[id] = isWhole(agent) ? agent : ({ ...AGENT_DEFAULTS(agent), ...agent } as Agent)
   }
-  return { ...scene, agents }
+  return { ...scene, agents, job: hasJob ? scene.job : null }
 }
 
 export function isWalkingAt(agent: Agent, at: number): boolean {
@@ -235,6 +238,7 @@ function arrive(scene: Scene, id: string, type: string, label: string, at: numbe
     lastErrorAt: null,
     lastEventAt: at,
     arrivedAt: at,
+    doneAt: null,
     goneAt: null,
     carry: null,
     look: lookFor(type, id),
@@ -296,6 +300,7 @@ function callBack(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
     brief: ev.brief === '' ? agent.brief : ev.brief,
     isBackground: ev.isBackground,
     outcome: null,
+    doneAt: null,
     goneAt: null,
     carry: null,
     activity: null,
@@ -362,6 +367,7 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
       pos: slotPoint('elevator', 0),
       walk: null,
       goneAt: null,
+      doneAt: null,
       outcome: null,
       carry: null,
       desk: nextDesk(s),
@@ -420,10 +426,15 @@ function waiting(scene: Scene, ev: Ev<'waiting'>): Scene {
   return withLine(s, ev.at, narrate(s, { ...ev, agentId: id }))
 }
 
+// A message from you starts a new job; a turn that carries on without one reopens the job it belongs to.
 function turnStarted(scene: Scene, ev: Ev<'turnStarted'>): Scene {
   const main = scene.agents[MAIN]
   if (main === undefined) return scene
-  const s = put(scene, { ...moveTo(scene, main, 'office', ev.at), phase: 'working', lastEventAt: ev.at })
+  const job =
+    ev.isContinuation && scene.job !== null
+      ? { ...scene.job, endedAt: null }
+      : { startedAt: ev.at, endedAt: null, task: ev.task, mainUsage: null }
+  const s = put({ ...scene, job }, { ...moveTo(scene, main, 'office', ev.at), phase: 'working', lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }
 
@@ -439,7 +450,8 @@ export function addUsage(sum: Usage | null, more: Usage | null): Usage | null {
 function turnEnded(scene: Scene, ev: Ev<'turnEnded'>): Scene {
   const main = scene.agents[MAIN]
   if (main === undefined) return scene
-  const s = put(scene, { ...main, phase: 'idle', activity: null, usage: addUsage(main.usage, ev.usage), lastEventAt: ev.at })
+  const job = scene.job === null ? null : { ...scene.job, endedAt: ev.at, mainUsage: addUsage(scene.job.mainUsage, ev.usage) }
+  const s = put({ ...scene, job }, { ...main, phase: 'idle', activity: null, usage: addUsage(main.usage, ev.usage), lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }
 
@@ -492,7 +504,15 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
     next = { ...moved, phase: 'gone', goneAt: ev.at + (moved.walk?.durationMs ?? 0) }
   }
   const awaitedBy = isParentHere && waitingOn(scene, parent.id).some(a => a.id === agent.id) ? parent : undefined
-  let s = put(scene, { ...next, activity: null, report: ev.report, outcome, usage: addUsage(agent.usage, ev.usage), lastEventAt: ev.at })
+  let s = put(scene, {
+    ...next,
+    activity: null,
+    report: ev.report,
+    outcome,
+    usage: addUsage(agent.usage, ev.usage),
+    doneAt: ev.at,
+    lastEventAt: ev.at,
+  })
   if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at)
   s = trimTexts(prune(s))
   s = withLine(s, ev.at, narrate(s, ev))

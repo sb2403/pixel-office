@@ -62,7 +62,7 @@ test('quiet events have no line', async () => {
   expect(narrate(s, { kind: 'tick', at: 1 })).toBeNull()
   expect(narrate(s, { kind: 'todos', done: 1, open: 1, at: 1 })).toBeNull()
   expect(narrate(s, { kind: 'toolEnded', agentId: 'main', callId: 'c', isError: true, at: 1 })).toBe('Main hit an error')
-  expect(narrate(s, { kind: 'turnStarted', isContinuation: false, at: 1 })).toBe('You gave Main a new task')
+  expect(narrate(s, { kind: 'turnStarted', isContinuation: false, task: '', at: 1 })).toBe('You gave Main a new task')
 })
 
 test('a permission prompt says what it is for, not which tool', async () => {
@@ -81,8 +81,8 @@ test('a turn that ends leaves Main waiting for the next message', async () => {
 
 test('a turn without a typed prompt is a continuation', async () => {
   const s = emptyScene()
-  expect(narrate(s, { kind: 'turnStarted', isContinuation: true, at: 1 })).toBe('Main picked up where it left off')
-  expect(narrate(s, { kind: 'turnStarted', isContinuation: false, at: 1 })).toBe('You gave Main a new task')
+  expect(narrate(s, { kind: 'turnStarted', isContinuation: true, task: '', at: 1 })).toBe('Main picked up where it left off')
+  expect(narrate(s, { kind: 'turnStarted', isContinuation: false, task: '', at: 1 })).toBe('You gave Main a new task')
 })
 
 test('a hire says whether the boss waits for the report, works alongside, or gains a teammate', async () => {

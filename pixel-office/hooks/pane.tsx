@@ -1,8 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
+import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
 import { STATUS_WORDS, agentDetails, altText, clockLabel, isCut, objectiveLine, orgRows, renderOffice } from './render'
+import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
@@ -12,6 +14,8 @@ const legendAtom = atom({ plugin: 'pixel-office', key: 'legendOpen' } as const, 
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
 const expandedAtom = atom({ plugin: 'pixel-office', key: 'expanded' } as const, null as 'brief' | 'report' | null)
+const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, false)
+const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
 const LINK = '#378add'
 // The details lines a whole text belongs under.
 const PARTS = [
@@ -26,6 +30,8 @@ export function registerPane(on: On): void {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
     const expanded = await read($, expandedAtom)
+    const isJobOpen = await read($, jobOpenAtom)
+    const history = await read($, historyAtom)
     const selected = await read($, selectedAtom)
     // Reading the clock atom subscribes the pane to it: each write from the flush timer redraws the pane.
     const now = Math.max(await $.clock.now(), await read($, clockAtom))
@@ -33,6 +39,7 @@ export function registerPane(on: On): void {
     const shown = rows.slice(0, ORG_MAX)
     const hidden = rows.length - shown.length
     const details = selected === null ? [] : agentDetails(scene, selected, now)
+    const recap = recapOf(scene, now)
 
     if (e.surface === 'terminal') {
       const { Box, Text } = $.ui.resolve(e)
@@ -56,6 +63,7 @@ export function registerPane(on: On): void {
               {clockLabel(line.at)} {line.text}
             </Text>
           ))}
+          {recap !== null && recapSummary(recap).map(line => <Text>{line}</Text>)}
         </Box>
       )
     }
@@ -130,11 +138,41 @@ export function registerPane(on: On): void {
             )}
           </Box>
         </Box>
-        <Button
-          key="legend"
-          label={isLegendOpen ? 'Hide legend' : 'Show legend'}
-          onPress={() => update($, legendAtom, isOpen => !isOpen)}
-        />
+        <Box key="buttons" flexDirection="row" gap={2}>
+          <Button
+            key="legend"
+            label={isLegendOpen ? 'Hide legend' : 'Show legend'}
+            onPress={() => update($, legendAtom, isOpen => !isOpen)}
+          />
+          {recap !== null && (
+            <Button
+              key="job"
+              label={isJobOpen ? 'Hide this job' : 'Show this job'}
+              onPress={() => update($, jobOpenAtom, isOpen => !isOpen)}
+            />
+          )}
+        </Box>
+        {isJobOpen && recap !== null && (
+          <Box key="job-view" flexDirection="column">
+            {recapSummary(recap).map((line, i) => (
+              <Text bold={i === 0}>{line}</Text>
+            ))}
+            <Svg source={recapSvg(recap)} alt={recapAlt(recap)} />
+            {recapRows(recap).map(line => (
+              <Text dimColor>{line}</Text>
+            ))}
+            {history.length > 0 && (
+              <Box key="history" flexDirection="column" marginTop={1}>
+                <Text bold>Earlier jobs</Text>
+                {[...history].reverse().map(record => (
+                  <Text dimColor wrap="truncate-end">
+                    {historyLine(record)}
+                  </Text>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
         {isLegendOpen && (
           <Box key="legend-list" flexDirection="column">
             {STATION_ORDER.map(id => (

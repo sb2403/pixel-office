@@ -1,18 +1,23 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
-import type { OfficeEvent, Usage } from '../types'
+import type { JobRecord, OfficeEvent, Usage } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
+import { HISTORY_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { PANE, PANE_TITLE } from './state'
-import { WAITING_TOOLS, detailOf, fullText, stationFor, targetOf, todoCounts } from './stations'
+import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
 // How much of a helper's brief and of its report the office keeps, to be read in full from its details box.
 export const TEXT_MAX = 2000
+// How much of your message names the job in its recap.
+export const TASK_MAX = 120
 const SWEEP_EVERY = 15
 const CLOCK_EVERY = 3
 const QUEUE_MAX = 500
+// The history, when it is switched on, lives under one key of the mod's store.
+export const HISTORY_KEY = 'jobs'
 const UNTRACKED = new Set(['Agent', 'Task'])
 
 // Atoms cannot be imported across files, so each file that reads one declares it again; pane.tsx has the same three.
@@ -20,6 +25,9 @@ const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyS
 const selectedAtom = atom({ plugin: 'pixel-office', key: 'selected' } as const, null as string | null)
 const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
 const expandedAtom = atom({ plugin: 'pixel-office', key: 'expanded' } as const, null as 'brief' | 'report' | null)
+const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, false)
+const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
+
 
 // A turn's token counts, summed over its requests (absent when nothing counted: an interrupt, an API error).
 const usageOf = (u: TurnUsage | undefined): Usage | null =>
@@ -47,6 +55,8 @@ type Office = {
   isOpened: boolean
   wantsOpen: boolean
   epoch: number
+  keepsHistory: boolean
+  hasJobToSave: boolean
 }
 
 // The engine only lets `$` travel into functions declared at the top of this file, so the helpers that
@@ -54,6 +64,20 @@ type Office = {
 async function openPane($: EngineInterface, office: Office): Promise<void> {
   await $.ui.open({ id: PANE, title: PANE_TITLE })
   office.isOpened = true
+}
+
+async function loadHistory($: EngineInterface): Promise<void> {
+  const saved = await $.store.get(HISTORY_KEY)
+  const list = Array.isArray(saved) ? saved.filter(isRecord).slice(-HISTORY_MAX) : []
+  await update($, historyAtom, () => list)
+}
+
+async function saveJob($: EngineInterface): Promise<void> {
+  const recap = recapOf(restore(await read($, sceneAtom)), await $.clock.now())
+  if (recap === null) return
+  const list = withRecord(await read($, historyAtom), jobRecord(recap))
+  await $.store.set(HISTORY_KEY, list)
+  await update($, historyAtom, () => list)
 }
 
 async function flush($: EngineInterface, office: Office): Promise<void> {
@@ -66,6 +90,8 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     const epoch = office.epoch
     office.queue = []
     const isSweepTurn = office.flushes % SWEEP_EVERY === 0
+    // Saved from the batch being applied, so the record never misses the end of the turn it is about.
+    if (batch.some(ev => ev.kind === 'turnEnded')) office.hasJobToSave = true
     if (batch.length === 0 && !(isSweepTurn && needsSweep(restore(await read($, sceneAtom)), now))) return
     await update($, sceneAtom, scene => {
       // A /clear since the queue was taken makes this batch (and sweep) belong to the old conversation. The
@@ -79,14 +105,23 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
   // about once a second, while a row is open, write the time to state. The pane reads that atom, and a state
   // write is what makes the desktop pane redraw (a bare redraw request from this timer does not).
   // Only a helper still on the job has a clock to keep: not Main, not one that has left, not a pruned id.
+  // The open recap of a job still running keeps time the same way.
   await quietly(async () => {
     if (office.flushes % CLOCK_EVERY !== 0) return
+    const scene = restore(await read($, sceneAtom))
     const selected = await read($, selectedAtom)
-    if (selected === null || selected === MAIN) return
-    const agent = (await read($, sceneAtom)).agents[selected]
-    if (agent === undefined || agent.phase === 'gone') return
+    const agent = selected === null || selected === MAIN ? undefined : scene.agents[selected]
+    const isClockShown = agent !== undefined && agent.phase !== 'gone'
+    const isJobShown = (await read($, jobOpenAtom)) && scene.job !== null && scene.job.endedAt === null
+    if (!isClockShown && !isJobShown) return
     const now = await $.clock.now()
     await update($, clockAtom, () => now)
+  })
+  // The history is written after the scene, so the record holds the turn that just ended.
+  await quietly(async () => {
+    if (!office.keepsHistory || !office.hasJobToSave) return
+    office.hasJobToSave = false
+    await saveJob($)
   })
   // The session and spawn hooks only ask for the pane; it opens here, off their path, and a failed open tries again next flush.
   await quietly(async () => {
@@ -97,7 +132,16 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
 
 export const register: Register = (on, options) => {
   const autoOpen = String(options.autoOpen ?? 'on-first-subagent')
-  const office: Office = { queue: [], isFlushing: false, flushes: 0, isOpened: false, wantsOpen: false, epoch: 0 }
+  const office: Office = {
+    queue: [],
+    isFlushing: false,
+    flushes: 0,
+    isOpened: false,
+    wantsOpen: false,
+    epoch: 0,
+    keepsHistory: String(options.history ?? 'off') === 'last-20',
+    hasJobToSave: false,
+  }
 
   const push = (ev: OfficeEvent): void => {
     office.queue.push(ev)
@@ -113,6 +157,9 @@ export const register: Register = (on, options) => {
     })
     await quietly(async () => {
       await $.command.register({ name: 'office', description: 'Show or hide the pixel office' })
+    })
+    await quietly(async () => {
+      if (office.keepsHistory) await loadHistory($)
     })
     // The session start hook only asks for the pane, as the spawn hook does; the flush opens it.
     if (autoOpen === 'session-start') office.wantsOpen = true
@@ -189,7 +236,9 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     // A turn started without typed text carries on from the one before.
-    await quietly(async () => push({ kind: 'turnStarted', isContinuation: e.text === '', at: await $.clock.now() }))
+    await quietly(async () =>
+      push({ kind: 'turnStarted', isContinuation: e.text === '', task: gist(e.text, TASK_MAX), at: await $.clock.now() }),
+    )
     return next(e)
   }).catch(($, e, next) => next(e))
 

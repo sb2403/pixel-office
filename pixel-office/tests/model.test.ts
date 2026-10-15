@@ -168,7 +168,7 @@ describe('work, errors and waiting', () => {
   })
 
   test('a new task puts Main to work in the corner office', async () => {
-    const s = reduce(emptyScene(), { kind: 'turnStarted', isContinuation: false, at: 1 })
+    const s = reduce(emptyScene(), { kind: 'turnStarted', isContinuation: false, task: '', at: 1 })
     expect(s.agents[MAIN]!.phase).toBe('working')
     expect(s.agents[MAIN]!.station).toBe('office')
     expect(lastLine(s)).toBe('You gave Main a new task')
@@ -177,7 +177,7 @@ describe('work, errors and waiting', () => {
 
 describe('the end of a turn', () => {
   const turnEnded = (at: number): OfficeEvent => ({ kind: 'turnEnded', usage: null, at })
-  const turnStarted = (at: number): OfficeEvent => ({ kind: 'turnStarted', isContinuation: false, at })
+  const turnStarted = (at: number): OfficeEvent => ({ kind: 'turnStarted', isContinuation: false, task: '', at })
 
   test('Main goes idle at the corner office when its turn ends', async () => {
     const s = run([turnStarted(1000), start(MAIN, 'Bash', 'npm test', 'c1', 1100), end(MAIN, 'c1', 1200)])
@@ -400,7 +400,7 @@ describe('names', () => {
 
 describe('coordinating', () => {
   const back = (id: string, at: number, report = ''): OfficeEvent => ({ kind: 'handedBack', agentId: id, reason: 'answer', report, usage: null, at })
-  const turnStarted: OfficeEvent = { kind: 'turnStarted', isContinuation: false, at: 500 }
+  const turnStarted: OfficeEvent = { kind: 'turnStarted', isContinuation: false, task: '', at: 500 }
 
   test('a boss with nothing in hand is coordinating while its helpers are out', async () => {
     const s = run([turnStarted, spawn('a1', 1000), spawn('a2', 1000, { type: 'Plan' })])
@@ -467,9 +467,9 @@ describe('what the work cost', () => {
 
   test("Main's turns add up too", async () => {
     const s = run([
-      { kind: 'turnStarted', isContinuation: false, at: 1 },
+      { kind: 'turnStarted', isContinuation: false, task: '', at: 1 },
       { kind: 'turnEnded', usage: used(1000, 0, 'claude-opus-5-5'), at: 2 },
-      { kind: 'turnStarted', isContinuation: false, at: 3 },
+      { kind: 'turnStarted', isContinuation: false, task: '', at: 3 },
       { kind: 'turnEnded', usage: used(500, 400, 'claude-opus-5-5'), at: 4 },
     ])
     expect(s.agents[MAIN]!.usage).toEqual({ tokens: 1500, reused: 400, model: 'claude-opus-5-5' })
@@ -482,7 +482,7 @@ describe('called back', () => {
     spawn('a1', at, { isResume: true, description: 'check one more file', brief: 'Also look at session.ts', ...extra })
 
   test('a helper that had left comes back by the elevator, is briefed again and is waited on', async () => {
-    const gone = run([{ kind: 'turnStarted', isContinuation: false, at: 500 }, spawn('a1', 1000), back('a1', 5000)])
+    const gone = run([{ kind: 'turnStarted', isContinuation: false, task: '', at: 500 }, spawn('a1', 1000), back('a1', 5000)])
     expect(gone.agents.a1!.phase).toBe('gone')
     const s = reduce(gone, again(60_000))
     const a1 = s.agents.a1!
