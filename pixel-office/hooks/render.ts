@@ -198,22 +198,71 @@ export function agentDetails(scene: Scene, id: string, now: number): string[] {
 }
 
 // A boss waiting on its helpers shows who it is waiting on, with the meeting-room icon.
-function bubble(agent: Agent, scene: Scene): string {
+type BubbleBox = { text: string; station: StationId; isWaiting: boolean; width: number; left: number; top: number }
+
+// What a speech bubble says and where it would sit over its agent, or null when the agent has nothing to say.
+function bubbleBox(agent: Agent, scene: Scene): BubbleBox | null {
   const isWaiting = agent.phase === 'waiting'
   const team = isCoordinating(scene, agent) ? waitingOn(scene, agent.id) : []
-  if (agent.activity === null && !isWaiting && team.length === 0) return ''
+  if (agent.activity === null && !isWaiting && team.length === 0) return null
   const station: StationId = isWaiting ? 'reception' : team.length > 0 ? 'meeting' : agent.station
   const text =
     team.length === 1 ? clip(`waiting on ${team[0]?.label ?? ''}`) : team.length > 1 ? `waiting on ${team.length}` : (agent.activity?.target ?? '')
   const width = 9 + Math.ceil(text.length * 2.4)
   const left = clamp(-Math.round(width / 2), 2 - agent.pos.x, WIDTH - 2 - agent.pos.x - width)
   const top = Math.max(-27, 1 - agent.pos.y)
+  return { text, station, isWaiting, width, left, top }
+}
+
+// Bubbles of agents standing close together would cover each other, so each takes the lowest lane (one bubble
+// higher than the last) that is free, and a thin stem joins a raised bubble to its agent. Near the top of the floor
+// there is no room to go higher: a bubble with no free lane is left out (-1) rather than hidden under another, and
+// the panel still says what that agent is doing.
+const BUBBLE_HEIGHT = 10
+const BUBBLE_STEP = 11
+const BUBBLE_LANES = 3
+
+function bubbleLanes(agents: readonly Agent[], scene: Scene, now: number): Map<string, number> {
+  const placed: Array<{ x0: number; x1: number; y0: number; y1: number }> = []
+  const lanes = new Map<string, number>()
+  for (const agent of agents) {
+    const box = bubbleBox(agent, scene)
+    if (box === null) continue
+    const at = positionAt(agent, now)
+    const x0 = at.x + box.left
+    const x1 = x0 + box.width
+    let found = -1
+    let highest = Infinity
+    for (let lane = 0; lane <= BUBBLE_LANES; lane++) {
+      const y0 = at.y + Math.max(1 - agent.pos.y, box.top - lane * BUBBLE_STEP)
+      // A lane that is no higher than the last, because the floor's top edge stops it, is no new lane.
+      if (y0 >= highest) break
+      highest = y0
+      const rect = { x0, x1, y0, y1: y0 + BUBBLE_HEIGHT }
+      if (!placed.some(r => r.x0 < rect.x1 && rect.x0 < r.x1 && r.y0 < rect.y1 && rect.y0 < r.y1)) {
+        placed.push(rect)
+        found = lane
+        break
+      }
+    }
+    lanes.set(agent.id, found)
+  }
+  return lanes
+}
+
+function bubble(agent: Agent, scene: Scene, lane = 0): string {
+  const box = bubbleBox(agent, scene)
+  if (box === null || lane < 0) return ''
+  const { text, station, isWaiting, width, left } = box
+  const top = Math.max(1 - agent.pos.y, box.top - lane * BUBBLE_STEP)
   const blink = isWaiting ? '<animate attributeName="opacity" values="1;0.35;1" dur="0.8s" repeatCount="indefinite"/>' : ''
   const words = text === '' ? '' : `<text x="8.5" y="6" font-size="4" fill="#2c2c2a">${escapeXml(text)}</text>`
+  const stem = box.top - top > 0 ? rect(-left - 0.5, BUBBLE_HEIGHT, 1, box.top - top, '#2c2c2a') : ''
   return (
     `<g transform="translate(${n(left)},${n(top)})">${blink}` +
     rect(0, 0, width, 8, '#ffffff', ' stroke="#2c2c2a" stroke-width="0.5"') +
     rect(-left - 1, 8, 2, 2, '#ffffff') +
+    stem +
     iconSvg(station, 2, 1.5, STATIONS[station].color) +
     `${words}</g>`
   )
@@ -283,7 +332,7 @@ export function etaBar(scene: Scene, agent: Agent, now: number): string {
   return `${track}<rect x="${x}" y="1.8" width="${start}" height="1" fill="#97c459"><animate attributeName="width" from="${start}" to="${BAR_WIDTH}" dur="${Math.round(eta.leftMs)}ms" fill="freeze"/></rect>`
 }
 
-function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false): string {
+function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false, lane = 0): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
   // The clock line ticks every second; keeping it out of the drawing keeps an idle office's source unchanged.
   const facts = agentDetails(scene, agent.id, now).filter(line => !PANEL_ONLY.some(start => line.startsWith(start)))
@@ -297,7 +346,7 @@ function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false):
     const rest = splitAt(agent.walk.points, (now - agent.walk.startedAt) / agent.walk.durationMs)
     const ms = Math.max(1, Math.round(agent.walk.startedAt + agent.walk.durationMs - now))
     const path = `M${rest.map(p => `${n(p.x)},${n(p.y)}`).join(' L')}`
-    return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${carried(agent, now)}${etaBar(scene, agent, now)}${tag}${puff}</g>`
+    return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${carried(agent, now)}${etaBar(scene, agent, now)}${tag}${bubble(agent, scene, lane)}${puff}</g>`
   }
   const period = agent.activity !== null ? BOB[agent.station] : undefined
   const body = personSvg(agent.look, variant, 0)
@@ -305,7 +354,39 @@ function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false):
     period === undefined
       ? body
       : `<g>${body}<animateTransform attributeName="transform" type="translate" values="0,0;0,-0.6;0,0" dur="${period}s" repeatCount="indefinite"/></g>`
-  return `<g id="${id}" transform="translate(${n(agent.pos.x)},${n(agent.pos.y)})">${head}${working}${etaBar(scene, agent, now)}${tag}${bubble(agent, scene)}${puff}</g>`
+  return `<g id="${id}" transform="translate(${n(agent.pos.x)},${n(agent.pos.y)})">${head}${working}${etaBar(scene, agent, now)}${tag}${bubble(agent, scene, lane)}${puff}</g>`
+}
+
+// The furniture an agent at work is using, outlined in its station's colour: where on the floor each station's
+// things stand. A desk and a phone booth belong to one agent, so each has its own; the rest are shared.
+type Box = { x: number; y: number; w: number; h: number }
+const IN_USE: Partial<Record<StationId, (slot: number) => Box>> = {
+  desk: slot => ({ x: 77 + 22 * (slot % 4), y: 20 + 30 * Math.floor(slot / 4), w: 18, h: 19 }),
+  library: () => ({ x: 177, y: 11, w: 63, h: 24 }),
+  mailroom: () => ({ x: 177, y: 51, w: 30, h: 19 }),
+  phone: slot => ({ x: 213 + 14 * Math.min(slot, 1), y: 51, w: 14, h: 30 }),
+  server: () => ({ x: 185, y: 101, w: 46, h: 28 }),
+  meeting: () => ({ x: 91, y: 115, w: 44, h: 14 }),
+  taskboard: () => ({ x: 71, y: 0, w: 34, h: 10 }),
+  reception: () => ({ x: 35, y: 122, w: 28, h: 11 }),
+}
+
+function inUse(here: readonly Agent[]): string {
+  const seen = new Set<string>()
+  let out = ''
+  for (const agent of here) {
+    const place = IN_USE[agent.station]
+    if (place === undefined || agent.activity === null) continue
+    const box = place(agent.slot)
+    const key = `${agent.station}:${box.x}:${box.y}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const color = STATIONS[agent.station].color
+    out +=
+      `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="0.8">` +
+      '<animate attributeName="stroke-opacity" values="0.95;0.35;0.95" dur="1.6s" repeatCount="indefinite"/></rect>'
+  }
+  return out
 }
 
 function overlays(scene: Scene, now: number): string {
@@ -313,7 +394,7 @@ function overlays(scene: Scene, now: number): string {
   const here = all.filter(a => a.phase !== 'gone')
   const busy = (station: StationId): Agent[] =>
     here.filter(a => a.station === station && a.activity !== null && !isWalkingAt(a, now))
-  let out = ''
+  let out = inUse(here)
   if (scene.briefing !== null) {
     out += `<text x="116" y="99" font-size="3.5" text-anchor="middle" fill="#2c2c2a">${escapeXml(clip(scene.briefing, 18))}</text>`
   }
@@ -399,7 +480,8 @@ export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): st
       .sort((p, q) => p.y - q.y)
       .map(p => p.a)
     const below = tagsBelow(drawn, now)
-    const people = drawn.map(a => drawAgent(a, scene, now, below.has(a.id))).join('')
+    const lanes = bubbleLanes(drawn, scene, now)
+    const people = drawn.map(a => drawAgent(a, scene, now, below.has(a.id), lanes.get(a.id) ?? 0)).join('')
     const extra = ranked.length - count
     return `${head}${withDecor ? officeDecor() + petSvg(now) : ''}${props}${people}${extra > 0 ? badge(extra) : ''}</svg>`
   }

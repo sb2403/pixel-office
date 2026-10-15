@@ -203,6 +203,38 @@ describe('renderOffice', () => {
     expect(officeSource(later, 4600)).toBe(again)
   })
 
+  test('a walking agent carries its bubble, so what it is about to do shows before it arrives', async () => {
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
+    const group = groupOf(renderOffice(s, 1700), 'a1')
+    expect(group).toContain('animateMotion')
+    expect(group).toContain('>auth.ts</text>')
+  })
+
+  test('a station in use is outlined in its colour, and only while someone works there', async () => {
+    const working = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
+    const library = '<rect x="177" y="11" width="63" height="24" fill="#7f77dd"'
+    expect(renderOffice(working, 9000)).toContain(library)
+    expect(renderOffice(run([spawnEv('a1', 1000)]), 9000)).not.toContain(library)
+    // Two agents at one shared station outline it once.
+    const two = run([spawnEv('a1', 1000), spawnEv('a2', 1000), readEv('a1', 'a.ts', 1500), readEv('a2', 'b.ts', 1500)])
+    expect(renderOffice(two, 9000).split(library)).toHaveLength(2)
+    // A desk belongs to one agent: its own desk is outlined.
+    const editing: OfficeEvent = { kind: 'toolStarted', agentId: 'a1', tool: 'Edit', target: 'x.ts', detail: '', callId: 'e1', at: 1500 }
+    expect(renderOffice(run([spawnEv('a1', 1000), editing]), 9000)).toMatch(/<rect x="77" y="20" width="18" height="19" fill="#378add"/)
+  })
+
+  test('bubbles of agents standing together take different lanes, and one with no room is left out', async () => {
+    const reads = ['a', 'b', 'c'].flatMap((id, i) => [spawnEv(id, 1000), readEv(id, `a-long-file-name-${i}.ts`, 1500)])
+    const svg = renderOffice(run(reads), 9000)
+    // The library has room for two rows of bubbles: two of the three helpers are shown, one above the other, and
+    // the third is left out rather than hidden under them.
+    const shown = [...svg.matchAll(/>(a-long-file-name-\d\.ts)<\/text>/g)].map(m => m[1])
+    expect(shown).toHaveLength(2)
+    const tops = [...svg.matchAll(/<g transform="translate\(-?[\d.]+,(-?[\d.]+)\)"><rect x="0" y="0" width="\d+" height="8"[^>]*\/>(?:(?!<g transform).)*?>a-long-file-name-\d\.ts</g)].map(m => Number(m[1]))
+    expect(tops).toHaveLength(2)
+    expect(Math.abs((tops[0] ?? 0) - (tops[1] ?? 0))).toBeGreaterThanOrEqual(10)
+  })
+
   test('night and day differ', async () => {
     expect(isNight(new Date(2026, 9, 14, 22).getTime())).toBe(true)
     expect(isNight(new Date(2026, 9, 14, 12).getTime())).toBe(false)
