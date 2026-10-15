@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { etaDetail, etaOf, etaWords } from '../hooks/eta'
 import { emptyScene, reduce } from '../hooks/model'
-import { agentDetails, orgRows } from '../hooks/render'
+import { agentDetails, etaBar, orgRows, renderOffice } from '../hooks/render'
 import type { OfficeEvent, Scene } from '../types'
 
 const hire = (id: string, at: number, extra: Partial<Extract<OfficeEvent, { kind: 'spawned' }>> = {}): OfficeEvent => ({
@@ -59,5 +59,21 @@ describe('how long a helper usually takes', () => {
     const lines = agentDetails(s, 'h3', 105_000)
     expect(lines.some(l => l.startsWith('Expected: usually about'))).toBe(true)
     expect(etaDetail(etaOf(s, s.agents.h3!, 105_000)!)).toContain('from 2 similar helpers')
+  })
+
+  test('a bar under the helper fills over the time left, then pulses amber once it is overdue', async () => {
+    const s = run([...history, hire('h3', 100_000)])
+    // Predecessors took about 20 s; 5 s in, a quarter is full and the rest fills over the 15 s left.
+    const bar = etaBar(s, s.agents.h3!, 105_000)
+    expect(bar).toContain('width="2.25"')
+    expect(bar).toContain('from="2.25" to="9" dur="15000ms"')
+    expect(bar).toContain('#97c459')
+    const late = etaBar(s, s.agents.h3!, 200_000)
+    expect(late).toContain('#fac775')
+    expect(late).toContain('values="1;0.4;1"')
+    // No estimate, no bar; and it is drawn inside the picture, on the helper.
+    expect(etaBar(s, s.agents.h1!, 105_000)).toBe('')
+    expect(renderOffice(s, 105_000)).toContain('dur="15000ms"')
+    expect(renderOffice(run(history), 105_000)).not.toContain('dur="15000ms"')
   })
 })

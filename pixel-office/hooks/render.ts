@@ -267,6 +267,21 @@ export function tagsBelow(agents: readonly Agent[], now: number): Set<string> {
   return below
 }
 
+// A thin bar under a helper's feet that fills over the time its predecessors took. It is animated inside the
+// picture, so it needs no redraw as it fills; one past what is usual stays full and pulses amber instead.
+const BAR_WIDTH = 9
+export function etaBar(scene: Scene, agent: Agent, now: number): string {
+  const eta = etaOf(scene, agent, now)
+  if (eta === null) return ''
+  const x = -BAR_WIDTH / 2
+  const track = rect(x, 1.8, BAR_WIDTH, 1, '#000000', ' fill-opacity="0.45"')
+  if (eta.leftMs <= 1000) {
+    return `${track}<rect x="${x}" y="1.8" width="${BAR_WIDTH}" height="1" fill="#fac775"><animate attributeName="opacity" values="1;0.4;1" dur="1.2s" repeatCount="indefinite"/></rect>`
+  }
+  const start = n(BAR_WIDTH * clamp((now - agent.arrivedAt) / eta.typicalMs, 0, 1))
+  return `${track}<rect x="${x}" y="1.8" width="${start}" height="1" fill="#97c459"><animate attributeName="width" from="${start}" to="${BAR_WIDTH}" dur="${Math.round(eta.leftMs)}ms" fill="freeze"/></rect>`
+}
+
 function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
   // The clock line ticks every second; keeping it out of the drawing keeps an idle office's source unchanged.
@@ -281,7 +296,7 @@ function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false):
     const rest = splitAt(agent.walk.points, (now - agent.walk.startedAt) / agent.walk.durationMs)
     const ms = Math.max(1, Math.round(agent.walk.startedAt + agent.walk.durationMs - now))
     const path = `M${rest.map(p => `${n(p.x)},${n(p.y)}`).join(' L')}`
-    return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${carried(agent, now)}${tag}${puff}</g>`
+    return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${carried(agent, now)}${etaBar(scene, agent, now)}${tag}${puff}</g>`
   }
   const period = agent.activity !== null ? BOB[agent.station] : undefined
   const body = personSvg(agent.look, variant, 0)
@@ -289,7 +304,7 @@ function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false):
     period === undefined
       ? body
       : `<g>${body}<animateTransform attributeName="transform" type="translate" values="0,0;0,-0.6;0,0" dur="${period}s" repeatCount="indefinite"/></g>`
-  return `<g id="${id}" transform="translate(${n(agent.pos.x)},${n(agent.pos.y)})">${head}${working}${tag}${bubble(agent, scene)}${puff}</g>`
+  return `<g id="${id}" transform="translate(${n(agent.pos.x)},${n(agent.pos.y)})">${head}${working}${etaBar(scene, agent, now)}${tag}${bubble(agent, scene)}${puff}</g>`
 }
 
 function overlays(scene: Scene, now: number): string {
