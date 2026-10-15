@@ -107,7 +107,7 @@ export function timeline(): { phases: Phase[]; points: Array<{ at: number; along
   const points: Array<{ at: number; along: number }> = [{ at: 0, along: 0 }]
   const legs = ROUTE.map((from, i) => {
     const to = ROUTE[(i + 1) % ROUTE.length] as Stop
-    return { from, to, length: Math.hypot(to.x - from.x, to.y - from.y) }
+    return { from, to, length: Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2) }
   })
   const length = legs.reduce((sum, l) => sum + l.length, 0)
   let at = 0
@@ -134,7 +134,11 @@ export function petSvg(now: number): string {
   const motionPoints = points.map((p, i) => (i === points.length - 1 ? 1 : n(p.along / length))).join(';')
   const path = `M${ROUTE.map(s => `${s.x},${s.y}`).join(' L')} L${(ROUTE[0] as Stop).x},${(ROUTE[0] as Stop).y}`
   const starts = phases.map(p => fraction(p.start)).join(';')
-  const begin = `-${n((now % (cycle * 1000)) / 1000)}s`
+  // Where in the loop it is, from the local time of day: the same moment gives the same picture in any time zone,
+  // and the loop runs on unbroken through the day.
+  const day = new Date(now)
+  const sinceMidnight = ((day.getHours() * 60 + day.getMinutes()) * 60 + day.getSeconds()) * 1000 + day.getMilliseconds()
+  const begin = `-${n((sinceMidnight % (cycle * 1000)) / 1000)}s`
   const loop = `dur="${n(cycle)}s" begin="${begin}" repeatCount="indefinite"`
   const shown = (kind: Phase['kind']): string =>
     `<animate attributeName="opacity" calcMode="discrete" keyTimes="${starts}" values="${phases.map(p => (p.kind === kind ? 1 : 0)).join(';')}" ${loop}/>`

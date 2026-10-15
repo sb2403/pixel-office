@@ -54,13 +54,19 @@ describe('the office cat', () => {
     }
   })
 
-  test('it carries on from the same moment when the picture is drawn again', async () => {
+  test('it carries on from the same moment when the picture is drawn again, whatever the time zone', async () => {
     const { cycle } = timeline()
     const offset = (now: number): number => Number(/begin="-([\d.]+)s"/.exec(petSvg(now))![1])
-    expect(offset(0)).toBe(0)
-    expect(offset(5000)).toBe(5)
-    // A whole loop later it is back where it started.
-    expect(Math.abs(offset(cycle * 1000 + 5000) - 5)).toBeLessThan(0.01)
+    // Local times, as a person's clock reads them.
+    const at = (h: number, m: number, s: number): number => new Date(2026, 9, 15, h, m, s).getTime()
+    const base = offset(at(14, 5, 0))
+    expect(base).toBeGreaterThanOrEqual(0)
+    expect(base).toBeLessThan(cycle)
+    // Five seconds later it is five seconds further along the loop (or just past its end).
+    const later = offset(at(14, 5, 5))
+    expect(Math.abs(((later - base + cycle) % cycle) - 5)).toBeLessThan(0.01)
+    // The same local time is the same picture, so it does not depend on the time zone it is drawn in.
+    expect(petSvg(at(14, 5, 0))).toBe(petSvg(at(14, 5, 0)))
   })
 
   test('it is in the picture, with the people but under their bubbles', async () => {
