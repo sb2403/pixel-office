@@ -235,6 +235,18 @@ describe('renderOffice', () => {
     expect(Math.abs((tops[0] ?? 0) - (tops[1] ?? 0))).toBeGreaterThanOrEqual(10)
   })
 
+  test('a click in the panel draws the picture again as of now, so a restart carries on from where everyone is', async () => {
+    forgetOffice()
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
+    const idle = officeSource(s, 2000, '|false|false|')
+    expect(officeSource(s, 5000, '|false|false|')).toBe(idle)
+    // Opening a row, the legend or the job view is a new picture, drawn at the time of the click.
+    const clicked = officeSource(s, 5000, 'a1|false|false|')
+    expect(clicked).not.toBe(idle)
+    expect(clicked).toBe(renderOffice(s, 5000))
+    expect(officeSource(s, 9000, 'a1|false|false|')).toBe(clicked)
+  })
+
   test('night and day differ', async () => {
     expect(isNight(new Date(2026, 9, 14, 22).getTime())).toBe(true)
     expect(isNight(new Date(2026, 9, 14, 12).getTime())).toBe(false)
