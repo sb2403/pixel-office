@@ -2,7 +2,7 @@
 
 A Claude Code mod that draws a live pixel-art office in the Claude desktop app. Every agent in the session is a character with a job title. Main is the coordinator: it talks with you, splits big jobs into parts and hires helpers for them. Helpers arrive by elevator, get briefed in the meeting room, walk to the station that matches the tool they are using, carry their report back to whoever hired them and leave. You can see who is waiting on whom, what each one was asked to do, and what each one found.
 
-<img src="docs/images/office.svg" alt="The Pixel Office, a pixel-art floor plan. Main sits in the corner office with a speech bubble that reads waiting on 2. The Planner stands in the records library with a bubble reading session.ts. The Researcher walks across the floor carrying a yellow folder, its report, back to Main. In the meeting room the Assistant sits beside a new helper, Researcher 2, with a bubble reading waiting on Researcher 2, and the whiteboard reads find why a test fails." width="100%">
+<img src="docs/images/office.svg" alt="The Pixel Office, a pixel-art floor plan. Main sits in the corner office with a speech bubble that reads waiting on 2. The Planner stands in the records library with a bubble reading session.ts. The Researcher walks across the floor carrying a yellow folder, its report, back to Main. In the meeting room the Assistant sits beside a new helper, Test fails, with a bubble reading waiting on Test fails, and the whiteboard reads find why a test fails." width="100%">
 
 The picture above is the mod's own drawing of a made-up session, and it is animated. Main hired three helpers at once and is coordinating: its bubble says it is waiting on two of them. The Researcher has finished and is carrying its report to Main. The Assistant found a failing test and hired a helper of its own, so it is coordinating too, from the meeting room. To try it yourself, jump to [Install](#install).
 
@@ -40,7 +40,7 @@ Every helper is named for the job its kind of agent does, so you can tell what i
 | Guide | `claude-code-guide` | Looks up how Claude Code itself works. |
 | Contractor | (unknown) | A helper the office did not see being hired. |
 
-Any other kind of agent is named after its type: a `code-reviewer` is a "Code reviewer". A helper the engine gave a name keeps it ("Scout"), and its details box adds the role. A second helper of the same kind is numbered, as in "Researcher 2".
+Any other kind of agent is named after its type: a `code-reviewer` is a "Code reviewer". A helper the engine gave a name keeps it ("Scout"), and its details box adds the role. A second helper of the same kind is named for its job, as in "Test fails" (a researcher hired to find why a test fails); with no job to go on, or the same job, it is numbered, as in "Researcher 2".
 
 **How they work together.** A boss hires a helper in one of two ways, and the office shows which:
 
@@ -64,7 +64,7 @@ Two signs worth knowing. A red puff above a character means a tool call just hit
 
 ## Reading the panel
 
-<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Researcher 2, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report, its tokens and how long it was on the job. A Show legend button and a Show this job button sit at the bottom." width="100%">
+<img src="docs/images/pane-preview.svg" alt="The Pixel Office pane. The office picture sits on top. Underneath, on the left, the feed What's happening lists the last few events with their times. On the right, Who's doing what lists Main as coordinating, waiting on the Planner and the Assistant; the Planner reading session.ts; the Assistant coordinating its own helper, Test fails, who is being briefed; and the Researcher, done, having handed in its report. A dim line under each helper gives its objective. A details box for the Researcher shows its role, its job, its brief, who it reports to, the start of its report, its tokens and how long it was on the job. A Show legend button and a Show this job button sit at the bottom." width="100%">
 
 The numbers below match the numbers in the picture.
 
@@ -79,7 +79,7 @@ The numbers below match the numbers in the picture.
 
 A job is everything from a message you send until the next one. Once you have sent one, a **Show this job** button sits beside the legend button. It opens a recap that answers the question delegation raises: did splitting the work up help?
 
-<img src="docs/images/job-recap.svg" alt="The recap of a finished job. This job: fix the login bug. Took 4 minutes 22 seconds, 4 helpers, up to 4 at once, 207 thousand tokens. Helpers did 8 minutes 28 seconds of work in 3 minutes 40 seconds: about 2.3 times faster than one after another. A timeline shows one bar per agent: Main across the whole job; the Researcher, Planner and Assistant starting together; Researcher 2, hired by the Assistant, starting later. Each helper's bar ends with a tick and how long it took. Under it, one line per agent gives its time, tokens and how its job ended." width="100%">
+<img src="docs/images/job-recap.svg" alt="The recap of a finished job. This job: fix the login bug. Took 4 minutes 22 seconds, 4 helpers, up to 4 at once, 207 thousand tokens. Helpers did 8 minutes 28 seconds of work in 3 minutes 40 seconds: about 2.3 times faster than one after another. A timeline shows one bar per agent: Main across the whole job; the Researcher, Planner and Assistant starting together; Test fails, hired by the Assistant, starting later. Each helper's bar ends with a tick and how long it took. Under it, one line per agent gives its time, tokens and how its job ended." width="100%">
 
 - **The summary** says how long the job took, how many helpers it used and how many were at work at once, and what it cost in tokens. With two or more helpers whose work overlapped, it adds the time their work would have taken one after another, compared with the time it took together.
 - **The timeline** has one bar per agent, indented by who hired whom, from when it started to when it handed in its report. Orange is Main, blue a helper Main waited for, green a helper working alongside. A tick, a square or a cross at the end says whether it handed in its report, was stopped, or ran into a problem. The colours were checked to stay apart for colour-blind readers, and the picture has a dark version for a dark screen.

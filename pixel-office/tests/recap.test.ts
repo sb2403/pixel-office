@@ -144,7 +144,7 @@ describe('recapOf', () => {
   })
 
   test('rows say how each job ended, in words', async () => {
-    const scene = run([turn(0), hire('a1', 1), hire('a2', 1), hire('a3', 1), back('a1', 5, used(41_200)), back('a2', 6, null, 'aborted'), back('a3', 7, null, 'error'), turnEnd(9)])
+    const scene = run([turn(0), hire('a1', 1, { description: '' }), hire('a2', 1, { description: '' }), hire('a3', 1, { description: '' }), back('a1', 5, used(41_200)), back('a2', 6, null, 'aborted'), back('a3', 7, null, 'error'), turnEnd(9)])
     expect(recapRows(recapOf(scene, s(10))!)).toEqual([
       'Main: 9s, finished',
       '  Researcher: 4s, 41k tokens, handed in its report',
