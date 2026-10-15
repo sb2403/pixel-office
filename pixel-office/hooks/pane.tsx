@@ -73,7 +73,7 @@ export function registerPane(on: On): void {
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
     return (
       <Box flexDirection="column" gap={1}>
-        <Svg source={officeSource(scene, now)} alt={altText(scene)} />
+        <Svg source={officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}`)} alt={altText(scene)} />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>

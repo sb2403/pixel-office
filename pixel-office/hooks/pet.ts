@@ -1,7 +1,7 @@
 import { HEIGHT, WIDTH } from './stations'
 
 // The office cat. It has nothing to do with the session: it patrols the corridor, sits for a while at a few
-// favourite spots, and naps on the break-room couch, on a loop of about a minute and a half. The whole loop is
+// favourite spots, and naps on the break-room couch, on a loop of about a minute. The whole loop is
 // drawn as animations inside the picture, so the cat costs no redraws, and it picks the loop up at the same moment
 // whenever the picture is drawn again, so it never jumps back to the start.
 

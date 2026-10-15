@@ -455,8 +455,11 @@ export function sceneTimeOf(scene: Scene): number {
 // inside it meanwhile. Redrawn at the real time, so nobody is put back where they were a moment ago.
 let drawn: { key: string; source: string } | null = null
 
-export function officeSource(scene: Scene, now: number): string {
-  const key = `${sceneTimeOf(scene)}:${scene.order.length}:${scene.ticker.length}:${isNight(now)}`
+// `interaction` names what the person has just done in the panel (which row is open, whether the legend is shown):
+// the desktop may draw the picture again when the panel changes, which restarts every animation in it from the
+// moment it was drawn, so a click draws it again as of now and a restart carries on from where everyone really is.
+export function officeSource(scene: Scene, now: number, interaction = ''): string {
+  const key = `${sceneTimeOf(scene)}:${scene.order.length}:${scene.ticker.length}:${isNight(now)}:${interaction}`
   if (drawn === null || drawn.key !== key) drawn = { key, source: renderOffice(scene, now) }
   return drawn.source
 }
