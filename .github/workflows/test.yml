@@ -1,0 +1,56 @@
+name: Test
+
+# The mod is built on an early-access API that can change in any Claude Code release, so the tests run on every
+# pull request and push, and again every week against the newest release, even when nothing here changed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mod:
+    name: Mod on Claude Code ${{ matrix.claude-code }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest version the README promises, and the newest release.
+        claude-code: ['2.1.295', 'latest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@${{ matrix.claude-code }}
+      - run: claude --version
+      - name: Run the mod's tests
+        run: claude plugin test pixel-office
+      - name: Validate the mod
+        run: claude plugin validate --strict pixel-office
+      - name: Validate the marketplace
+        run: claude plugin validate .
+
+  pictures:
+    name: README pictures match the drawing code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Draw the pictures again
+        run: npx -y tsx@4.19.2 scripts/render-preview.ts
+      - name: Fail if they changed
+        run: |
+          if ! git diff --quiet -- docs/images; then
+            git diff --stat -- docs/images
+            echo "::error::The README pictures are out of date. Run: npx -y tsx@4.19.2 scripts/render-preview.ts, then commit docs/images."
+            exit 1
+          fi
