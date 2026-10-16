@@ -403,11 +403,24 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
   is no walk at all.
 - **A helper called back on its way out turns round where it is**, or when it uses a tool again, instead of jumping
   back to the elevator; one that has ridden away still steps out of it.
-- **Still open.** Each redraw of the single picture restarts every walk in it as of `LEAD_MS` ahead. When the
-  desktop takes longer or shorter than that to show a picture, every walker jumps by the difference: in the
-  simulation, a few cells per redraw at 100 or 400 ms, at about 1.4 redraws a second with three helpers. A picture
-  the desktop mounts again (out of view and back) replays from when it was drawn. Bubbles change lanes when a
-  neighbour's bubble comes or goes.
+- **Still open.** Each redraw of the single picture restarts every walk in it. A picture drawn as of `LEAD_MS`
+  ahead but shown after the desktop's own delay is late by the difference, and so was the picture before it, so the
+  lead cancels out (corrected in 0.5.1; this said the lead decided the jump). What moves a walker is how much the
+  desktop's delay changes from one picture to the next: in the simulation, the same jumps for leads of 0, 250 and
+  500 ms, a p90 of 4 cells at ±50 ms of variation and 12 at ±150 ms, at about 1.4 redraws a second with three
+  helpers. A picture the desktop mounts again (out of view and back) replays from when it was drawn. Bubbles change
+  lanes when a neighbour's bubble comes or goes.
+
+## 0.5.1: a probe for the layered picture
+
+- **Why the layered picture is worth another look.** In the simulation it cuts the walker jumps a person can see by
+  about 86% against the single picture (73 against 516 at ±150 ms of variation): a walker's picture is drawn again
+  only when its own walk changes. The first layered build (PR #19) showed the scenery but no agents, and its layer
+  boxes had no size; PR #21 gave them the whole region two minutes later, but no pane has shown the layered picture
+  since, and installed copies stayed on 0.4.0 until 0.5.0.
+- **The layer probe.** With `debug` on and the layered picture, a third probe (`probe-layer`) sits in a box laid out
+  as an agent's layer is, and reports the room that box gets, so one run tells a layer with no room from a layer
+  that has room and still shows nothing.
 
 ## Out of scope
 

@@ -7,7 +7,7 @@ import { MAIN, emptyScene, needsSweep, reduceAt, restore } from './model'
 import { registerPane } from './pane'
 import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { LEAD_MS, nowOf } from './render'
-import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_TOP } from './state'
+import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_LAYER, PROBE_TOP } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
@@ -380,7 +380,7 @@ export const register: Register = (on, options) => {
 
   // What this plugin's probes (a surface module inside the pane) post: only four plain fields are kept.
   on('ui.message', async ($, e, next) => {
-    if (e.element !== PROBE_TOP && e.element !== PROBE_BOTTOM) return next(e)
+    if (e.element !== PROBE_TOP && e.element !== PROBE_BOTTOM && e.element !== PROBE_LAYER) return next(e)
     if (office.isDebug) {
       const d = typeof e.data === 'object' && e.data !== null ? (e.data as Record<string, unknown>) : {}
       note('probe', {
