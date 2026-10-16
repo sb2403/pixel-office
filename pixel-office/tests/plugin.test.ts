@@ -148,11 +148,26 @@ test('a spawned subagent opens the office and appears in the drawing', async ($,
   await clock.advance(FLUSH)
   expect(opened).toContain('pixel-office')
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
-  const svg = await ui.find({ type: 'Svg' })
-  expect(String(svg?.props.source)).toContain('id="agent-agent-1"')
+  const pictures = await ui.findAll({ type: 'Svg' })
+  // The default is layered: the scenery, then one transparent picture each for Main and the helper.
+  expect(pictures).toHaveLength(3)
+  expect(String(pictures[0]?.props.source)).not.toContain('<g id="agent-')
+  expect(String(pictures[2]?.props.source)).toContain('id="agent-agent-1"')
   expect(await ui.find({ type: 'Text', text: /Main hired Researcher and is waiting for its report: find auth code/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Main · coordinating · waiting on Researcher/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Researcher · working · being briefed/ })).toBeDefined()
+})
+
+test('with the single picture, everybody is drawn in one picture', { options: { picture: 'single' } }, async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  const pictures = await ui.findAll({ type: 'Svg' })
+  expect(pictures).toHaveLength(1)
+  expect(String(pictures[0]?.props.source)).toContain('id="agent-agent-1"')
+  expect(String(pictures[0]?.props.source)).toContain('id="agent-main"')
 })
 
 test('a spawn returns before the pane opens', async ($, on) => {
@@ -498,8 +513,8 @@ test('the recap of this job opens from its button and tells the story in words a
   expect(await ui.find({ type: 'Text', text: /^  Researcher: \d+s, handed in its report$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^This session: 1 job · 1 helper · \d+s$/ })).toBeDefined()
   const pictures = await ui.findAll({ type: 'Svg' })
-  expect(pictures).toHaveLength(2)
-  expect(String(pictures[1]?.props.alt)).toContain('Researcher')
+  expect(pictures).toHaveLength(3)
+  expect(String(pictures[2]?.props.alt)).toContain('Researcher')
   // History is off unless switched on: nothing is kept past the session.
   expect(await ui.find({ type: 'Text', text: /^Earlier jobs$/ })).toBeUndefined()
   expect(stored.jobs).toBeUndefined()

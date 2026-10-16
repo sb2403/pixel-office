@@ -75,6 +75,8 @@ The numbers below match the numbers in the picture.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 6. **Show this job.** A button that opens the recap of the job in front of you: see below.
 
+The office picture is drawn in layers: the scenery is one picture and each agent is its own transparent picture stacked on top of it, so one agent doing something never restarts another agent's walk. If the layers ever look misplaced, set the `picture` option to `single` (see Commands and options) to draw everybody in one picture, the old way.
+
 ## The office cat
 
 There is a cat in the office. It has nothing to do with your session: it patrols the corridor, sits for a while at a few favourite spots, and naps on the break-room couch, on a loop of about a minute. It is drawn as animations inside the picture, so it costs no extra redraws, and it carries on from the same point of its loop whenever the picture is drawn again. It is left out only when the picture is too large to draw the decorations.
@@ -155,6 +157,11 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 
 - `off` (default): no reminders.
 - `after-30s`: once an agent has waited 30 seconds for your answer, permission or plan approval, the office says so once, naming the agent ("Researcher is waiting for your permission"). It shows a toast over the conversation, and raises a notification through your notification setting. In a terminal that is a desktop notification or a bell, as your terminal does them; the Claude desktop app shows the toast, and only your own notification hooks run there. Claude Code may already notify you when it needs you; if the two double up, leave this off.
+
+**`picture`** decides how the office is drawn:
+
+- `layered` (default): each agent is its own picture over the scenery, so one agent moving never restarts another one walking.
+- `single`: one picture for everybody. Use it if the layers ever look misplaced; the cost is that any agent's event can make walkers in the picture jump back.
 
 Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
 

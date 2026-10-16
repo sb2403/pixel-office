@@ -28,6 +28,13 @@
       "description": "After an agent has waited 30 seconds for your answer or permission, say so once, with a toast and a notification",
       "default": "off",
       "options": ["off", "after-30s"]
+    },
+    "picture": {
+      "type": "string",
+      "title": "Office picture",
+      "description": "layered: each agent is its own picture, so one agent moving never restarts another one walking; single: one picture for everybody (use it if the layers ever look misplaced)",
+      "default": "layered",
+      "options": ["layered", "single"]
     }
   }
 }

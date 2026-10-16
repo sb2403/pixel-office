@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
-import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
+import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -26,7 +26,7 @@ const PARTS = [
 // Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
 const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
-export function registerPane(on: On): void {
+export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { isLayered: true }): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
@@ -74,11 +74,29 @@ export function registerPane(on: On): void {
     const { Box, Text, Button, Svg, Markdown } = $.ui.resolve(e)
     const chosen = selected === null ? undefined : scene.agents[selected]
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
-    const officePicture = officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}|${Math.floor((e.props.scroll?.offset ?? 0) / SCROLL_BUCKET)}`)
+    // Layered: the scenery is one picture and each agent its own, stacked over it, so one agent's event only redraws
+    // that agent's picture. The panel's own state (a selected row, the legend) is deliberately not part of it.
+    const layers = isLayered ? officeLayers(scene, now, Math.floor((e.props.scroll?.offset ?? 0) / SCROLL_BUCKET)) : undefined
+    const officePicture =
+      layers !== undefined
+        ? layers.base.source
+        : officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}|${Math.floor((e.props.scroll?.offset ?? 0) / SCROLL_BUCKET)}`)
+    const size = fitSize(svgSize(officePicture), e.props.bodyColumns)
     const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
       <Box flexDirection="column" gap={1}>
-        <Svg source={officePicture} alt={altText(scene)} {...fitSize(svgSize(officePicture), e.props.bodyColumns)} />
+        {layers === undefined ? (
+          <Svg source={officePicture} alt={altText(scene)} {...size} />
+        ) : (
+          <Box key="office" position="relative">
+            <Svg key="office-base" source={layers.base.source} alt={altText(scene)} {...size} />
+            {layers.agents.map(layer => (
+              <Box key={layer.key} position="absolute" top={0} left={0}>
+                <Svg key={layer.key + '-svg'} source={layer.source} alt=" " {...size} />
+              </Box>
+            ))}
+          </Box>
+        )}
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>
