@@ -2,6 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import { clearLog, debugOn } from '../hooks/debuglog'
+import { recapOf } from '../hooks/recap'
 import type { Scene } from '../types'
 
 const SCENE = { plugin: 'pixel-office', key: 'scene' } as const
@@ -77,6 +78,7 @@ function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boo
   on('ui.close', () => ({ value: undefined }))
   on('tool.call', ($, e) => (String(e.tool) === 'Bash' ? { deny: 'not allowed' } : { result: `ran ${String(e.tool)}`, text: 'ok' }))
   on('agent.spawn', () => ({ model: 'test-model', agentId: options.hiredId?.() ?? 'agent-1' }))
+  on('prompt.submit', ($, e) => ({ text: e.text }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
@@ -779,4 +781,61 @@ test('by default nothing is written to the debug log and the pane has no probes'
   expect(await ui.findAll({ type: 'Client' })).toHaveLength(0)
   await clock.advance(FLUSH)
   expect(writes.filter(w => LOG_FILE.test(w.path))).toHaveLength(0)
+})
+
+const NOTICE = '<task-notification><task-id>x</task-id></task-notification>'
+
+// A person's message, a helper hired and handed back: the state a notice then arrives in.
+async function jobWithHelper($: Parameters<Parameters<typeof test>[1]>[0], clock: { advance: (ms: number) => Promise<void> }) {
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'fix the login bug', turnId: 'turn-1' })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(2000)
+  await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId: 'turn-1', agentId: 'agent-1', reason: 'answer' })
+  await clock.advance(FLUSH)
+}
+
+test('a notice that wakes Main continues the job', async ($, on) => {
+  const { clock, scene } = world(on)
+  await jobWithHelper($, clock)
+  const before = scene()?.job
+  await $.prompt.submit({ text: NOTICE, origin: { kind: 'task-notification' }, wait: false })
+  await $.turn.start({ text: NOTICE, turnId: 'turn-2' })
+  await clock.advance(FLUSH)
+  expect(scene()?.job?.task).toMatch(/login bug/)
+  expect(scene()?.job?.startedAt).toBe(before?.startedAt)
+  expect(recapOf(scene() as Scene, clock.now())?.helpers).toBe(1)
+  expect(ticker(scene()).filter(line => line === 'You gave Main a new task')).toHaveLength(1)
+})
+
+test('a message from the composer starts a new job', async ($, on) => {
+  const { clock, scene } = world(on)
+  await jobWithHelper($, clock)
+  const before = scene()?.job
+  await $.prompt.submit({ text: 'now do the docs', origin: { kind: 'composer' }, wait: false })
+  await $.turn.start({ text: 'now do the docs', turnId: 'turn-2' })
+  await clock.advance(FLUSH)
+  expect(scene()?.job?.task).toMatch(/docs/)
+  expect(scene()?.job?.startedAt).not.toBe(before?.startedAt)
+  expect(ticker(scene()).filter(line => line === 'You gave Main a new task')).toHaveLength(2)
+})
+
+test('a notice is recognised by its text when no origin was recorded', async ($, on) => {
+  const { clock, scene } = world(on)
+  await jobWithHelper($, clock)
+  const before = scene()?.job
+  await $.turn.start({ text: NOTICE, turnId: 'turn-2' })
+  await clock.advance(FLUSH)
+  expect(scene()?.job?.task).toMatch(/login bug/)
+  expect(scene()?.job?.startedAt).toBe(before?.startedAt)
+})
+
+test('a notice with no job yet creates one', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.prompt.submit({ text: NOTICE, origin: { kind: 'task-notification' }, wait: false })
+  await $.turn.start({ text: NOTICE, turnId: 'turn-1' })
+  await clock.advance(FLUSH)
+  expect(scene()?.job).not.toBeNull()
+  expect(scene()?.job?.task).toBe('')
 })

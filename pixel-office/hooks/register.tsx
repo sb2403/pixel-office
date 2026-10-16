@@ -27,6 +27,9 @@ const DEBUG_WRITE_MS = 1000
 // The history, when it is switched on, lives under one key of the mod's store.
 export const HISTORY_KEY = 'jobs'
 const UNTRACKED = new Set(['Agent', 'Task'])
+// These wake Main about work already under way, so they continue the job; a scheduled trigger, the composer,
+// the bridge and the SDK are a person's or a host's own new message.
+const NOT_A_NEW_JOB = new Set(['task-notification', 'peer', 'peer-send-message'])
 
 // Atoms cannot be imported across files, so each file that reads one declares it again; pane.tsx has the same three.
 const sceneAtom = atom({ plugin: 'pixel-office', key: 'scene' } as const, emptyScene())
@@ -73,6 +76,8 @@ type Office = {
   // The opt-in debug log: whether it is on, and when it was last written.
   isDebug: boolean
   lastDebugWrite: number
+  // Where the latest prompt came from (its origin kind); the turn it starts reads and clears it.
+  lastOrigin: string | null
 }
 
 // The engine only lets `$` travel into functions declared at the top of this file, so the helpers that
@@ -208,6 +213,7 @@ export const register: Register = (on, options) => {
     reminded: new Set(),
     isDebug: String(options.debug ?? 'off') === 'on',
     lastDebugWrite: 0,
+    lastOrigin: null,
   }
   debugOn(office.isDebug)
 
@@ -310,16 +316,31 @@ export const register: Register = (on, options) => {
     return spawned
   }).catch(($, e, next) => next(e))
 
+  // The engine settles a prompt before the main loop's turn starts; the turn reads where it came from.
+  on('prompt.submit', async ($, e, next) => {
+    office.lastOrigin = e.origin?.kind ?? null
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.start', async ($, e, next) => {
     // The engine fires this for a helper's run too; only the main loop's turn is the person's message.
     if (e.agentId !== undefined) {
       if (office.isDebug) note('turn-ignored', { agent: e.agentId })
       return next(e)
     }
-    if (office.isDebug) note('turn-start')
-    // A turn started without typed text carries on from the one before.
+    const origin = office.lastOrigin
+    office.lastOrigin = null
+    const isNotice = origin !== null ? NOT_A_NEW_JOB.has(origin) : e.text.trimStart().startsWith('<task-notification')
+    // A turn started without typed text, or woken by a notice, carries on the job under way.
+    const continues = e.text === '' || isNotice
+    if (office.isDebug) note('turn-start', { origin: origin ?? 'none', continues })
     await quietly(async () =>
-      push({ kind: 'turnStarted', isContinuation: e.text === '', task: gist(e.text, TASK_MAX), at: await $.clock.now() }),
+      push({
+        kind: 'turnStarted',
+        isContinuation: continues,
+        task: isNotice ? '' : gist(e.text, TASK_MAX),
+        at: await $.clock.now(),
+      }),
     )
     return next(e)
   }).catch(($, e, next) => next(e))

@@ -83,7 +83,7 @@ There is a cat in the office. It has nothing to do with your session: it patrols
 
 ## The recap of a job
 
-A job is everything from a message you send until the next one. Once you have sent one, a **Show this job** button sits beside the legend button. It opens a recap that answers the question delegation raises: did splitting the work up help? If Main edited files itself rather than through a helper, the recap counts those edits too, so a coordinator that is not delegating shows.
+A job is everything from a message you send until the next one. A notice from a background helper or another session that wakes Main is not a new message, so it carries on the same job. Once you have sent one, a **Show this job** button sits beside the legend button. It opens a recap that answers the question delegation raises: did splitting the work up help? If Main edited files itself rather than through a helper, the recap counts those edits too, so a coordinator that is not delegating shows.
 
 <img src="docs/images/job-recap.svg" alt="The recap of a finished job. This job: fix the login bug. Took 4 minutes 22 seconds, 4 helpers, up to 4 at once, 207 thousand tokens. Main made 1 file edit itself, not through a helper. Helpers did 8 minutes 28 seconds of work in 3 minutes 40 seconds: about 2.3 times faster than one after another. A timeline shows one bar per agent: Main across the whole job; the Researcher, Planner and Assistant starting together; Test fails, hired by the Assistant, starting later. Each helper's bar ends with a tick and how long it took, with its share of the tokens beside it. Under it, one line per agent gives its time, tokens and how its job ended." width="100%">
 
