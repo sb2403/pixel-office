@@ -461,14 +461,11 @@ export const CELL_PX = 7.5
 // bucket, so a picture that is mounted fresh starts from where everyone is, while small scrolls leave it undisturbed.
 export const SCROLL_BUCKET = 24
 
-// Rows of scroll where the picture is still partly in view are told apart in steps of 6, anything beyond is one 'off'
-// place, so scrolling away and back changes the key exactly twice (once on the way out, once on the way back) and a
-// picture that is mounted fresh is drawn as of now.
+// The probes showed the panel is not remounted while it is scrolled near the top, so the picture is left alone there.
+// Only a scroll far enough to take it out of view changes the key (once out, once back), in case the app unmounts it.
 export const SCROLL_NEAR = 48
 export function scrollKey(offset: number): string {
-  if (!Number.isFinite(offset) || offset < 0) return '0'
-  if (offset >= SCROLL_NEAR) return 'off'
-  return String(Math.floor(offset / 6))
+  return Number.isFinite(offset) && offset >= SCROLL_NEAR ? 'off' : '0'
 }
 
 // The size the picture takes in a pane of this many columns, keeping its shape.
@@ -558,6 +555,14 @@ export function agentSignature(scene: Scene, a: Agent, lane: number, isBelow: bo
   ])
 }
 
+// What a walk is made of and nothing else: the agent's bubble, lane, tag side, ETA bar and activity are left out.
+export function walkSignature(a: Agent, scroll: string): string {
+  return `${JSON.stringify([
+    a.id, a.label, a.type, a.isTeammate, a.isBackground, a.station, a.slot, a.walk?.startedAt ?? null,
+    a.walk?.durationMs ?? null, a.phase === 'gone', a.goneAt, a.carry?.item ?? null, a.carry?.until ?? null,
+  ])}:${scroll}`
+}
+
 export function baseSignature(scene: Scene, extra = 0): string {
   const agents = scene.order.flatMap(id => {
     const a = scene.agents[id]
@@ -570,11 +575,15 @@ export function baseSignature(scene: Scene, extra = 0): string {
 
 let baseDrawn: { key: string; source: string; sig: string; night: boolean } | null = null
 // `parts` is kept only while a debug trace is listening: what the key was made of, to say what changed.
-type DrawnParts = { state: string; lane: number; below: boolean; scroll: string }
+type DrawnParts = { state: string; lane: number; below: boolean; scroll: string; walking: boolean }
 const agentDrawn = new Map<string, { key: string; source: string; parts?: DrawnParts }>()
+// The cat is drawn once and the same text is returned forever: its loop starts from the clock at the first draw and
+// repeats, so the same text stays right, and no redraw of anything else restarts it.
+let petDrawn: Layer | null = null
 
 export function forgetLayers(): void {
   baseDrawn = null
+  petDrawn = null
   agentDrawn.clear()
 }
 
@@ -583,7 +592,7 @@ export function officeLayers(
   now: number,
   scroll = '0',
   trace?: (e: Record<string, unknown>) => void,
-): { base: Layer; agents: Layer[] } {
+): { base: Layer; pet: Layer; agents: Layer[] } {
   const at = now + LEAD_MS
   const visible = rankedAgents(scene, at)
   const ids = new Set(visible.slice(0, MAX_LAYERS).map(a => a.id))
@@ -600,26 +609,36 @@ export function officeLayers(
       const why = baseDrawn === null ? ['first'] : [...(baseDrawn.sig !== baseSig ? ['signature'] : []), ...(baseDrawn.night !== isNight(now) ? ['night'] : [])]
       trace({ layer: 'base', why })
     }
-    const source = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}${officeDecor()}${petSvg(at)}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>`
+    const source = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}${officeDecor()}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>`
     baseDrawn = { key: baseKey, source, sig: baseSig, night: isNight(now) }
   }
+
+  if (petDrawn === null) petDrawn = { key: 'pet', source: `${ROOT}${petSvg(at)}</svg>` }
 
   const agents = drawn.map(a => {
     const lane = lanes.get(a.id) ?? 0
     const isBelow = below.has(a.id)
     const isWalking = isWalkingAt(a, at)
-    const key = `${agentSignature(scene, a, lane, isBelow, at)}${isWalking ? `:${scroll}` : ''}`
+    // A redraw restarts the walk, and any error in how far ahead it is drawn shows as a jump, so a walker is left alone
+    // from the moment its walk starts until it arrives; a walk that starts anew (a new walk.startedAt) is drawn afresh.
+    // Once it has arrived the key is the full signature, so the agent is drawn once more, standing, as it is by then.
+    const key = isWalking ? walkSignature(a, scroll) : agentSignature(scene, a, lane, isBelow, at)
     let layer = agentDrawn.get(a.id)
     if (layer === undefined || layer.key !== key) {
       let parts: DrawnParts | undefined
       if (trace !== undefined) {
-        const state = JSON.stringify([...agentFacts(a.id, a), waitingOn(scene, a.id).map(h => h.label), Math.round(etaOf(scene, a, at)?.typicalMs ?? 0)])
-        parts = { state, lane, below: isBelow, scroll: isWalking ? scroll : '' }
+        const state = isWalking
+          ? walkSignature(a, '')
+          : JSON.stringify([...agentFacts(a.id, a), waitingOn(scene, a.id).map(h => h.label), Math.round(etaOf(scene, a, at)?.typicalMs ?? 0)])
+        parts = { state, lane, below: isBelow, scroll: isWalking ? scroll : '', walking: isWalking }
         const prev = layer?.parts
         const why: string[] = []
         if (layer === undefined) why.push('first')
         else if (prev === undefined) why.push('unknown')
-        else {
+        else if (isWalking) {
+          if (!prev.walking || prev.state !== parts.state) why.push('walk')
+          else if (prev.scroll !== parts.scroll) why.push('scroll')
+        } else {
           if (prev.state !== parts.state) why.push('state')
           if (prev.lane !== lane) why.push('lane')
           if (prev.below !== isBelow) why.push('below')
@@ -633,7 +652,7 @@ export function officeLayers(
     return { key: `agent-${a.id}`, source: layer.source }
   })
   for (const id of Array.from(agentDrawn.keys())) if (!ids.has(id)) agentDrawn.delete(id)
-  return { base: { key: 'base', source: baseDrawn.source }, agents }
+  return { base: { key: 'base', source: baseDrawn.source }, pet: petDrawn, agents }
 }
 
 export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {
