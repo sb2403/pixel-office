@@ -103,6 +103,25 @@ export type Scene = {
   job: Job | null
 }
 
+// Another session on this computer, as its own office describes itself in its slot file (`hooks/peers.ts`).
+// `instance` is one load of the mod; `endedAt` set means the session has ended and the slot is free. `since` is
+// when `status` last changed; `doing` names a kind of work ("running a command"), never its object.
+export type PeerStatus = 'working' | 'coordinating' | 'waiting' | 'idle'
+export type PeerSession = {
+  v: 1
+  instance: string
+  sessionId: string
+  beatAt: number
+  startedAt: number
+  endedAt: number | null
+  project: string
+  status: PeerStatus
+  since: number
+  doing: string
+  task: string
+  needsYou: number
+}
+
 export type OfficeEvent =
   | {
       kind: 'spawned'
@@ -147,6 +166,8 @@ declare module 'claude-code' {
       history: JobRecord[]
       // Every job since the conversation started or was cleared, kept in memory.
       session: JobRecord[]
+      // The other sessions on this computer, when that is switched on.
+      others: PeerSession[]
     }
   }
 }

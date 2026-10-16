@@ -1,6 +1,6 @@
 {
   "name": "pixel-office",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A live pixel-art office showing what every agent in the session is doing",
   "author": { "name": "Spencer Barrett" },
   "license": "MIT",
@@ -28,6 +28,13 @@
       "description": "After an agent has waited 30 seconds for your answer or permission, say so once, with a toast and a notification",
       "default": "off",
       "options": ["off", "after-30s"]
+    },
+    "otherSessions": {
+      "type": "string",
+      "title": "Show my other sessions",
+      "description": "on: list your other Claude Code sessions on this computer that have this option on too. Each one writes a small file under your Claude config folder (pixel-office/sessions) with its project folder's name, whether it is working, idle or waiting on you, the kind of work it is doing, and the start of your latest message; off: nothing is written or read",
+      "default": "off",
+      "options": ["off", "on"]
     },
     "debug": {
       "type": "string",
