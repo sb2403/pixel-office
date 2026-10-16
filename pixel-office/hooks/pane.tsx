@@ -6,7 +6,7 @@ import { note } from './debuglog'
 import { emptyScene, restore } from './model'
 import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, scrollKey, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
-import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
+import { PANE, PROBE_BOTTOM, PROBE_LAYER, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
 const ORG_MAX = 14
@@ -127,6 +127,12 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
                 <Svg key={layer.key + '-svg'} source={layer.source} alt={'Layer for ' + layer.key.replace(/^agent-/, '')} {...size} />
               </Box>
             ))}
+            {isDebug === true && (
+              // Laid out as an agent's layer is: a layer the desktop gives no room shows in the log as a probe with none.
+              <Box key="probe-layer-box" position="absolute" top={0} left={0} width="100%" height="100%">
+                <Client key={PROBE_LAYER} module="./probe.tsx" props={{ where: 'layer' }} width="100%" height="100%" />
+              </Box>
+            )}
           </Box>
         )}
         <Box flexDirection="row" gap={2}>

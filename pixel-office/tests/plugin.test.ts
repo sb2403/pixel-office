@@ -786,6 +786,31 @@ test('with debug on, the flush writes the log, and the desktop pane carries two 
   clearLog()
 })
 
+test('with debug on, a layered pane has a probe laid out as an agent layer, and its size is logged', { options: { debug: 'on', picture: 'layered' } }, async ($, on) => {
+  clearLog()
+  const { clock } = world(on)
+  const writes = watchWrites(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  const box = await ui.find({ type: 'Box', key: 'probe-layer-box' })
+  const layer = await ui.find({ type: 'Box', key: 'agent-agent-1' })
+  expect(box).toBeDefined()
+  expect(layer?.props.position).toBe('absolute')
+  for (const prop of ['position', 'top', 'left', 'width', 'height']) expect(box?.props[prop]).toEqual(layer?.props[prop])
+  const probe = await ui.find({ type: 'Client', key: 'probe-layer' })
+  expect(probe?.props.width).toBe('100%')
+  expect(probe?.props.height).toBe('100%')
+  await ui.post({ kind: 'tick', where: 'layer', columns: 100, rows: 0 }, { in: 'probe-layer' })
+  await clock.advance(FLUSH)
+  const last = writes.filter(w => LOG_FILE.test(w.path)).pop()!.text
+  expect(last).toContain('"element":"probe-layer"')
+  expect(last).toContain('"rows":0')
+  debugOn(false)
+  clearLog()
+})
+
 test('by default nothing is written to the debug log and the pane has no probes', async ($, on) => {
   const { clock } = world(on)
   const writes = watchWrites(on)
