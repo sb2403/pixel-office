@@ -26,7 +26,7 @@ const PARTS = [
 // Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
 const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
-export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { isLayered: true }): void {
+export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { isLayered: false }): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
