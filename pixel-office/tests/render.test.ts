@@ -15,6 +15,7 @@ import {
   forgetOffice,
   officeSource,
   sceneTimeOf,
+  svgSize,
   tagsBelow,
 } from '../hooks/render'
 import type { Agent, OfficeEvent, Scene } from '../types'
@@ -420,4 +421,12 @@ describe('labels', () => {
     // Before it leaves, the clock still runs.
     expect(onTheJob(goneAt - 1000)).not.toBe(onTheJob(goneAt))
   })
+})
+
+test('a picture states the size its markup declares, so the pane keeps its height while the picture is swapped', async () => {
+  expect(svgSize(renderOffice(emptyScene(), 10_000))).toEqual({ width: 960, height: 600 })
+  expect(svgSize('<svg width="672" height="398"><svg width="640" height="172"></svg></svg>')).toEqual({ width: 672, height: 398 })
+  expect(svgSize('<svg viewBox="0 0 1 1"></svg>')).toBeUndefined()
+  expect(svgSize('<svg width="0" height="10">')).toBeUndefined()
+  expect(svgSize('not svg')).toBeUndefined()
 })

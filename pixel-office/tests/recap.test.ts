@@ -14,6 +14,7 @@ import {
   speedUp,
   withRecord,
 } from '../hooks/recap'
+import { svgSize } from '../hooks/render'
 import type { JobRecord, OfficeEvent, Scene, Usage } from '../types'
 
 const T = new Date(2026, 9, 15, 14, 5).getTime()
@@ -180,6 +181,12 @@ describe('recapSvg', () => {
     expect(svg).toContain('A helper working alongside')
     const alone = recapSvg(recapOf(run([turn(0), turnEnd(5)]), s(10))!)
     expect(alone.includes('A helper')).toBe(false)
+  })
+
+  test('states a size, so the picture keeps its box when it is swapped', async () => {
+    const size = svgSize(svg)
+    expect(size!.width).toBeGreaterThan(0)
+    expect(size!.height).toBeGreaterThan(0)
   })
 
   test('marks how each job ended with a shape as well as a color', async () => {
