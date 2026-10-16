@@ -35,6 +35,13 @@
       "description": "single: one picture for everybody (the default); layered: each agent is its own picture stacked over the scenery, so one agent moving never restarts another one walking. Layered is experimental: in some panes the agents do not show, and then use single",
       "default": "single",
       "options": ["layered", "single"]
+    },
+    "debug": {
+      "type": "string",
+      "title": "Debug log",
+      "description": "on: write a log of draws, events and what the pane reports to pixel-office/debug/log.jsonl (no commands, file names or text are logged, only event kinds, agent ids and timings); off: nothing",
+      "default": "off",
+      "options": ["off", "on"]
     }
   }
 }

@@ -1,6 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { clearLog, debugOn } from '../hooks/debuglog'
 import type { Scene } from '../types'
 
 const SCENE = { plugin: 'pixel-office', key: 'scene' } as const
@@ -727,4 +728,54 @@ test('the terminal gets a text office', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
   expect(await ui.find({ type: 'Text', text: /desktop app/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Main: idle, ready for your next message/ })).toBeDefined()
+})
+
+// The debug log: what the plugin notes goes to one file under its own folder, only when asked for.
+const LOG_FILE = /[\\/]debug[\\/]log\.jsonl$/
+const watchWrites = (on: On): { path: string; text: string }[] => {
+  const writes: { path: string; text: string }[] = []
+  on('fs.write', ($, e) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  return writes
+}
+
+test('with debug on, the flush writes the log, and the desktop pane carries two probes', { options: { debug: 'on' } }, async ($, on) => {
+  clearLog()
+  const { clock } = world(on)
+  const writes = watchWrites(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const logs = writes.filter(w => LOG_FILE.test(w.path))
+  expect(logs.length).toBeGreaterThan(0)
+  const text = logs[logs.length - 1]!.text
+  expect(text).toContain('"kind":"event"')
+  expect(text).toContain('"kind":"flush"')
+  expect(text).not.toContain('find auth code')
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  expect(await ui.findAll({ type: 'Client' })).toHaveLength(2)
+  await ui.post({ kind: 'mounted', where: 'top', columns: 80, rows: 1, secret: 'x' }, { in: 'probe-top' })
+  await clock.advance(FLUSH)
+  const last = writes.filter(w => LOG_FILE.test(w.path)).pop()!.text
+  expect(last).toContain('"kind":"render"')
+  expect(last).toContain('"kind":"probe"')
+  expect(last).toContain('"element":"probe-top"')
+  expect(last).toContain('"msg":"mounted"')
+  expect(last).not.toContain('secret')
+  debugOn(false)
+  clearLog()
+})
+
+test('by default nothing is written to the debug log and the pane has no probes', async ($, on) => {
+  const { clock } = world(on)
+  const writes = watchWrites(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  expect(await ui.findAll({ type: 'Client' })).toHaveLength(0)
+  await clock.advance(FLUSH)
+  expect(writes.filter(w => LOG_FILE.test(w.path))).toHaveLength(0)
 })

@@ -568,15 +568,22 @@ export function baseSignature(scene: Scene, extra = 0): string {
   return JSON.stringify([scene.briefing, scene.todos === null ? null : [scene.todos.done, scene.todos.open], agents, extra])
 }
 
-let baseDrawn: { key: string; source: string } | null = null
-const agentDrawn = new Map<string, { key: string; source: string }>()
+let baseDrawn: { key: string; source: string; sig: string; night: boolean } | null = null
+// `parts` is kept only while a debug trace is listening: what the key was made of, to say what changed.
+type DrawnParts = { state: string; lane: number; below: boolean; scroll: string }
+const agentDrawn = new Map<string, { key: string; source: string; parts?: DrawnParts }>()
 
 export function forgetLayers(): void {
   baseDrawn = null
   agentDrawn.clear()
 }
 
-export function officeLayers(scene: Scene, now: number, scroll = '0'): { base: Layer; agents: Layer[] } {
+export function officeLayers(
+  scene: Scene,
+  now: number,
+  scroll = '0',
+  trace?: (e: Record<string, unknown>) => void,
+): { base: Layer; agents: Layer[] } {
   const at = now + LEAD_MS
   const visible = rankedAgents(scene, at)
   const ids = new Set(visible.slice(0, MAX_LAYERS).map(a => a.id))
@@ -586,19 +593,41 @@ export function officeLayers(scene: Scene, now: number, scroll = '0'): { base: L
   const below = tagsBelow(drawn, at, a => a.pos)
   const lanes = bubbleLanes(drawn, scene, at, a => a.pos)
 
-  const baseKey = `${baseSignature(scene, extra)}:${isNight(now)}`
+  const baseSig = baseSignature(scene, extra)
+  const baseKey = `${baseSig}:${isNight(now)}`
   if (baseDrawn === null || baseDrawn.key !== baseKey) {
+    if (trace !== undefined) {
+      const why = baseDrawn === null ? ['first'] : [...(baseDrawn.sig !== baseSig ? ['signature'] : []), ...(baseDrawn.night !== isNight(now) ? ['night'] : [])]
+      trace({ layer: 'base', why })
+    }
     const source = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}${officeDecor()}${petSvg(at)}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>`
-    baseDrawn = { key: baseKey, source }
+    baseDrawn = { key: baseKey, source, sig: baseSig, night: isNight(now) }
   }
 
   const agents = drawn.map(a => {
     const lane = lanes.get(a.id) ?? 0
     const isBelow = below.has(a.id)
-    const key = `${agentSignature(scene, a, lane, isBelow, at)}${isWalkingAt(a, at) ? `:${scroll}` : ''}`
+    const isWalking = isWalkingAt(a, at)
+    const key = `${agentSignature(scene, a, lane, isBelow, at)}${isWalking ? `:${scroll}` : ''}`
     let layer = agentDrawn.get(a.id)
     if (layer === undefined || layer.key !== key) {
-      layer = { key, source: `${ROOT}${drawAgent(a, scene, at, isBelow, lane)}</svg>` }
+      let parts: DrawnParts | undefined
+      if (trace !== undefined) {
+        const state = JSON.stringify([...agentFacts(a.id, a), waitingOn(scene, a.id).map(h => h.label), Math.round(etaOf(scene, a, at)?.typicalMs ?? 0)])
+        parts = { state, lane, below: isBelow, scroll: isWalking ? scroll : '' }
+        const prev = layer?.parts
+        const why: string[] = []
+        if (layer === undefined) why.push('first')
+        else if (prev === undefined) why.push('unknown')
+        else {
+          if (prev.state !== parts.state) why.push('state')
+          if (prev.lane !== lane) why.push('lane')
+          if (prev.below !== isBelow) why.push('below')
+          if (prev.scroll !== parts.scroll && prev.scroll !== '' && parts.scroll !== '') why.push('scroll')
+        }
+        trace({ layer: 'agent', id: a.id, why, walking: isWalking, lane, isBelow, scroll })
+      }
+      layer = { key, source: `${ROOT}${drawAgent(a, scene, at, isBelow, lane)}</svg>`, parts }
       agentDrawn.set(a.id, layer)
     }
     return { key: `agent-${a.id}`, source: layer.source }

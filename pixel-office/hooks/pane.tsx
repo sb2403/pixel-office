@@ -2,10 +2,11 @@ import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
 import type { JobRecord } from '../types'
+import { note } from './debuglog'
 import { emptyScene, restore } from './model'
 import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, scrollKey, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
-import { PANE } from './state'
+import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
 const ORG_MAX = 14
@@ -26,7 +27,7 @@ const PARTS = [
 // Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
 const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
-export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { isLayered: false }): void {
+export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolean; isDebug?: boolean } = { isLayered: false }): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
@@ -71,12 +72,38 @@ export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { i
       )
     }
 
-    const { Box, Text, Button, Svg, Markdown } = $.ui.resolve(e)
+    const { Box, Text, Button, Svg, Markdown, Client } = $.ui.resolve(e)
     const chosen = selected === null ? undefined : scene.agents[selected]
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
     // Layered: the scenery is one picture and each agent its own, stacked over it, so one agent's event only redraws
     // that agent's picture. The panel's own state (a selected row, the legend) is deliberately not part of it.
-    const layers = isLayered ? officeLayers(scene, now, scrollKey(e.props.scroll?.offset ?? 0)) : undefined
+    let redrawn = 0
+    const trace =
+      isDebug === true
+        ? (d: Record<string, unknown>): void => {
+            if (d.layer === 'agent') redrawn += 1
+            note('draw', d, now)
+          }
+        : undefined
+    const key = scrollKey(e.props.scroll?.offset ?? 0)
+    const layers = isLayered ? officeLayers(scene, now, key, trace) : undefined
+    if (isDebug === true) {
+      note(
+        'render',
+        {
+          mode: layers === undefined ? 'single' : 'layered',
+          scroll: e.props.scroll?.offset ?? 0,
+          ...(layers === undefined ? {} : { scrollKey: key }),
+          columns: e.props.bodyColumns,
+          selected: selected !== null,
+          jobOpen: isJobOpen,
+          legendOpen: isLegendOpen,
+          agents: Object.keys(scene.agents).length,
+        },
+        now,
+      )
+      if (layers !== undefined) note('layers', { n: layers.agents.length, redrawn }, now)
+    }
     const officePicture =
       layers !== undefined
         ? layers.base.source
@@ -85,6 +112,7 @@ export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { i
     const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
       <Box flexDirection="column" gap={1}>
+        {isDebug === true && <Client key={PROBE_TOP} module="./probe.tsx" props={{ where: 'top' }} />}
         {layers === undefined ? (
           <Svg source={officePicture} alt={altText(scene)} {...size} />
         ) : (
@@ -209,6 +237,7 @@ export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { i
             ))}
           </Box>
         )}
+        {isDebug === true && <Client key={PROBE_BOTTOM} module="./probe.tsx" props={{ where: 'bottom' }} />}
       </Box>
     )
   })
