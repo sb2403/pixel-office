@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
-import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, svgSize } from './render'
+import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, scrollKey, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -76,7 +76,7 @@ export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { i
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
     // Layered: the scenery is one picture and each agent its own, stacked over it, so one agent's event only redraws
     // that agent's picture. The panel's own state (a selected row, the legend) is deliberately not part of it.
-    const layers = isLayered ? officeLayers(scene, now, Math.floor((e.props.scroll?.offset ?? 0) / SCROLL_BUCKET)) : undefined
+    const layers = isLayered ? officeLayers(scene, now, scrollKey(e.props.scroll?.offset ?? 0)) : undefined
     const officePicture =
       layers !== undefined
         ? layers.base.source

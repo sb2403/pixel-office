@@ -20,6 +20,7 @@ import {
   forgetOffice,
   officeSource,
   pictureSignature,
+  scrollKey,
   sceneTimeOf,
   svgSize,
   tagsBelow,
@@ -473,6 +474,12 @@ test('the picture is sized from the pane columns, keeping its shape', async () =
   expect(fitSize(size, NaN)).toBeUndefined()
 })
 
+describe('scrollKey', () => {
+  test('near places are told apart in steps of 6, anything far is one place', () => {
+    expect([0, 5, 6, 47, 48, 500, -3, NaN].map(scrollKey)).toEqual(['0', '0', '1', '7', 'off', 'off', '0', '0'])
+  })
+})
+
 describe('officeLayers', () => {
   const team = (): Scene => run([spawnEv('a', 1000), spawnEv('b', 1001), readEv('b', 'x.ts', 1500)])
 
@@ -515,19 +522,44 @@ describe('officeLayers', () => {
     for (const layer of after.agents) expect(layer.source).not.toContain('values="0.95;0.35;0.95"')
   })
 
-  test('a walking agent is drawn again when the scroll changes bucket, a standing one is not', () => {
+  test('a walking agent is drawn again when the scroll key changes, a standing one is not', () => {
     forgetLayers()
     const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
     const walk = s.agents.a1!.walk!
     const now = walk.startedAt + 100
-    const first = officeLayers(s, now, 0)
-    const later = officeLayers(s, now + 1000, 0)
-    const moved = officeLayers(s, now + 1000, 1)
-    expect(later.agents[1]!.source).toBe(first.agents[1]!.source)
-    expect(moved.agents[1]!.source).not.toBe(first.agents[1]!.source)
-    // Main stands: the same bucket or another leaves its picture alone.
-    const standing = officeLayers(s, now + 1000, 0)
-    expect(moved.agents[0]!.source).toBe(standing.agents[0]!.source)
+    const near = officeLayers(s, now, scrollKey(0))
+    const small = officeLayers(s, now + 100, scrollKey(5))
+    const away = officeLayers(s, now + 200, scrollKey(60))
+    const back = officeLayers(s, now + 300, scrollKey(0))
+    expect(small.agents[1]!.source).toBe(near.agents[1]!.source)
+    expect(away.agents[1]!.source).not.toBe(near.agents[1]!.source)
+    expect(back.agents[1]!.source).not.toBe(away.agents[1]!.source)
+    // A standing agent's picture (drawn at one moment) ignores the scroll key; main walks here, so look at a later moment.
+    const rested = run([spawnEv('a1', 1000)])
+    const t = 30000
+    const key0 = officeLayers(rested, t, scrollKey(0)).agents.map(l => l.source)
+    expect(officeLayers(rested, t, scrollKey(60)).agents.map(l => l.source)).toEqual(key0)
+    expect(officeLayers(rested, t, scrollKey(5)).agents.map(l => l.source)).toEqual(key0)
+  })
+
+  test('the layout does not depend on the time while agents walk', () => {
+    forgetLayers()
+    const s = run([
+      spawnEv('a', 1000, 'check the first thing in the repo'),
+      spawnEv('b', 1000, 'check the second thing in the repo'),
+      readEv('a', 'x.ts', 1100),
+      readEv('b', 'y.ts', 1100),
+    ])
+    const T = Math.max(s.agents.a!.walk!.startedAt, s.agents.b!.walk!.startedAt) + 50
+    const ends = Math.min(...['a', 'b'].map(id => s.agents[id]!.walk!.startedAt + s.agents[id]!.walk!.durationMs))
+    expect(T + 1000 + LEAD_MS).toBeLessThan(ends)
+    const first = officeLayers(s, T)
+    const second = officeLayers(s, T + 1000)
+    expect(second.agents.map(l => l.source)).toEqual(first.agents.map(l => l.source))
+    expect(second.base.source).toBe(first.base.source)
+    const drawn = ['a', 'b'].map(id => s.agents[id]!)
+    const dest = (x: Agent) => x.pos
+    expect(Array.from(tagsBelow(drawn, T, dest))).toEqual(Array.from(tagsBelow(drawn, T + 1000, dest)))
   })
 
   test('at most MAX_LAYERS agents are drawn and the base says how many more there are', () => {
