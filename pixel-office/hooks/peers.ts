@@ -131,7 +131,7 @@ const DOINGS = new Set(['', 'waiting on 1 helper', ...Object.values(DOING)])
 const isText = (value: unknown): value is string => typeof value === 'string'
 const isTime = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
 // Beyond what `gist` drops: the C1 controls and the marks that reorder text on screen.
-const UNSEEN = /[\u0080-\u009F؜​-‏‪-‮⁦-⁩]/g
+const UNSEEN = /[\u0080-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g
 const cleaned = (text: string, max: number): string => gist(text.slice(0, max * 4).replace(UNSEEN, ''), max)
 
 export function parsePeer(text: string): PeerSession | null {

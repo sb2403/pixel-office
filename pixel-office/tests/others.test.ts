@@ -51,6 +51,8 @@ function world(on: On, files: Record<string, File> = {}, { isListBroken = false 
       })),
     }
   })
+  // A folder that cannot be listed is there all the same.
+  on('fs.exists', ($, e) => ({ value: isListBroken || [...fs.keys()].some(path => path === e.path || path.startsWith(`${e.path}/`)) }))
   on('session.id', () => ({ value: sessionId }))
   on('session.root', () => ({ value: '/home/me/code/pixel-office' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -297,10 +299,24 @@ test('a change only in what another session is doing waits before it redraws the
 })
 
 test('a folder that cannot be read leaves the office as it was', ON, async ($, on) => {
-  const { clock } = world(on, {}, { isListBroken: true })
+  const { clock, writes } = world(on, {}, { isListBroken: true })
   await start($)
   await $.tool.call({ tool: 'Read', tool_use_id: 'tu-1', file_path: '/x/a.ts' })
   await clock.advance(LOOK)
   const ui = await mount($)
   expect(await ui.find({ type: 'Text', text: /Main is reading a\.ts/ })).toBeDefined()
+  // Every slot would look free, so nothing is written into one that someone else may hold.
+  expect(writes.filter(w => w.path.startsWith(DIR))).toHaveLength(0)
+})
+
+test('a session caught half way through a write stays in the list', ON, async ($, on) => {
+  const { clock, put } = world(on)
+  put(slotName(1), { text: other(clock.now()), mtimeMs: clock.now() })
+  await start($)
+  await clock.advance(LOOK)
+  const whole = other(clock.now())
+  put(slotName(1), { text: whole.slice(0, whole.length / 2), mtimeMs: clock.now() })
+  await clock.advance(LOOK)
+  const ui = await mount($)
+  expect(await ui.find({ type: 'Text', text: /api-server · working/ })).toBeDefined()
 })

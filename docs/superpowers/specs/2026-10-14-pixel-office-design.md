@@ -462,7 +462,7 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
   field, drops any `doing` words the office does not write, and cleans the text again.
 - **Timing.** Its own loop on the flush timer, with its own busy flag, so a slow disk never holds up the office: a look
   every 2 s, a write when the snapshot changed or every 6 s. The `others` atom is written at once when a session
-  comes, goes or starts waiting on the person, and otherwise at most every 10 s, as each redraw restarts the walks.
+  comes, goes, or starts or stops waiting on the person, and otherwise at most every 10 s, as each redraw restarts the walks.
 - **Ending.** `session.end` (not `clear` or `resume`, which go on under a new id) marks the copy ended, lets a look
   under way finish, and writes one tombstone, only into a slot it saw as its own within the stale window.
 - **Kept out.** Transcript files under `~/.claude/projects` (an undocumented format), `$.store` (one file, no lock), and

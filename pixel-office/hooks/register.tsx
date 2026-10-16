@@ -26,7 +26,7 @@ import {
   tombstoneOf,
   urgentOf,
 } from './peers'
-import type { SlotSeen } from './peers'
+import type { Self, SlotSeen } from './peers'
 import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { LEAD_MS, nowOf } from './render'
 import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_TOP } from './state'
@@ -254,6 +254,10 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
   office.isFlushing = false
 }
 
+// Whether `every` has passed since `at`. A clock set back makes it due at once, so the beat goes on rather than
+// stopping until the clock catches up again.
+const isDue = (now: number, at: number, every: number): boolean => now < at || now - at >= every
+
 async function peerDir($: EngineInterface): Promise<string | null> {
   const configDir = await $.env.get('CLAUDE_CONFIG_DIR')
   const home = await $.env.get('HOME')
@@ -262,10 +266,13 @@ async function peerDir($: EngineInterface): Promise<string | null> {
 }
 
 // Reads the slots that changed since they were last read. A slot that is not a plain small file (a link, a folder,
-// something big) is marked odd: never read, never written to, never free.
-async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise<Map<number, SlotSeen>> {
+// something big) is marked odd: never read, never written to, never free. Null when the folder is there but cannot
+// be listed: every slot would look free, and this copy must not write into one another holds.
+async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise<Map<number, SlotSeen> | null> {
   const seen = new Map<number, SlotSeen>()
-  const entries: FsEntry[] = await $.fs.list(dir).catch(() => [])
+  const listed: FsEntry[] | null = await $.fs.list(dir).catch(() => null)
+  if (listed === null && (await $.fs.exists(dir).catch(() => true))) return null
+  const entries = listed ?? []
   for (const entry of entries) {
     const slot = slotOf(entry.name)
     if (slot === null) continue
@@ -281,9 +288,10 @@ async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise
     }
     const text: unknown = await $.fs.read(`${dir}/${entry.name}`).catch(() => null)
     const peer = typeof text === 'string' ? parsePeer(text) : null
-    if (peer === null) peers.cache.delete(entry.name)
-    else peers.cache.set(entry.name, { mtimeMs: entry.mtimeMs, size: entry.size, peer })
-    seen.set(slot, { peer, mtimeMs: entry.mtimeMs, isOdd: false })
+    // A file caught half written keeps its last good copy, which ages out as any other, and stays uncached so the
+    // next look reads it again; a session does not drop out of the list for one bad read.
+    if (peer !== null) peers.cache.set(entry.name, { mtimeMs: entry.mtimeMs, size: entry.size, peer })
+    seen.set(slot, { peer: peer ?? cached?.peer ?? null, mtimeMs: entry.mtimeMs, isOdd: false })
   }
   return seen
 }
@@ -292,7 +300,7 @@ async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise
 // snapshot when it changed or a heartbeat is due, and hand the pane the others when what it shows has changed.
 async function lookAround($: EngineInterface, office: Office, peers: Peers): Promise<void> {
   const now = await $.clock.now()
-  if (now - peers.lastPoll < POLL_MS) return
+  if (!isDue(now, peers.lastPoll, POLL_MS)) return
   peers.lastPoll = now
   if (peers.startedAt === 0) peers.startedAt = now
   if (peers.dir === undefined) peers.dir = await peerDir($)
@@ -302,6 +310,7 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
   const sessionId = await $.session.id()
   const self = { instance: peers.instance, sessionId }
   const seen = await readSlots($, peers, dir)
+  if (seen === null) return
 
   // Two copies that took one slot at once: the one that sees the other's snapshot there moves.
   const mine = peers.slot === null ? undefined : seen.get(peers.slot)
@@ -320,7 +329,11 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
       peers.verifiedAt = now
       peers.lastContent = ''
     }
-  } else if (mine?.peer?.instance === peers.instance || mine === undefined) peers.verifiedAt = now
+  } else {
+    peers.verifiedAt = now
+    // Anything but this copy's own snapshot in its slot (a stale one, a broken one) is put right at once.
+    if (mine?.peer?.instance !== peers.instance) peers.lastContent = ''
+  }
 
   const scene = restore(await read($, sceneAtom))
   const status = peerStatusOf(scene)
@@ -333,7 +346,7 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
     const snapshot = snapshotOf(scene, { instance: peers.instance, sessionId, startedAt: peers.startedAt, project, since: peers.since }, now)
     const content = contentOf(snapshot)
     // Checked last thing before the write: once the session has ended its tombstone must be the slot's last word.
-    if ((content !== peers.lastContent || now - peers.lastBeat >= BEAT_MS) && !peers.isEnded) {
+    if ((content !== peers.lastContent || isDue(now, peers.lastBeat, BEAT_MS)) && !peers.isEnded) {
       await $.fs.write(`${dir}/${slotName(peers.slot)}`, JSON.stringify(snapshot))
       peers.lastContent = content
       peers.lastBeat = now
@@ -343,7 +356,7 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
   const others = livePeersOf(seen, self, now)
   const urgent = urgentOf(others)
   const shown = shownOf(others)
-  if (urgent !== peers.urgent || (shown !== peers.shown && now - peers.shownAt >= CALM_MS)) {
+  if (urgent !== peers.urgent || (shown !== peers.shown && isDue(now, peers.shownAt, CALM_MS))) {
     peers.urgent = urgent
     peers.shown = shown
     peers.shownAt = now
@@ -364,7 +377,7 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
   }
 }
 
-const livePeersOf = (seen: ReadonlyMap<number, SlotSeen>, self: { instance: string; sessionId: string }, now: number): PeerSession[] =>
+const livePeersOf = (seen: ReadonlyMap<number, SlotSeen>, self: Self, now: number): PeerSession[] =>
   livePeers(
     [...seen.values()].flatMap(found => (found.peer === null ? [] : [found.peer])),
     self,
@@ -390,7 +403,7 @@ async function endPeers($: EngineInterface, office: Office): Promise<void> {
   if (peers.run !== null) await peers.run
   if (peers.slot === null || typeof peers.dir !== 'string') return
   const now = await $.clock.now()
-  if (now - peers.verifiedAt > STALE_MS) return
+  if (Math.abs(now - peers.verifiedAt) > STALE_MS) return
   const meta = { instance: peers.instance, sessionId: await $.session.id(), startedAt: peers.startedAt, project: '', since: now }
   await $.fs.write(`${peers.dir}/${slotName(peers.slot)}`, JSON.stringify(tombstoneOf(meta, now)))
 }
