@@ -16,8 +16,9 @@ export function etaOf(scene: Scene, agent: Agent, now: number): Eta | null {
   if (agent.id === MAIN || agent.isTeammate || !isOut(agent)) return null
   const took = Object.values(scene.agents)
     .filter(a => a.id !== agent.id && a.type === agent.type && a.phase === 'gone' && a.outcome === 'reported' && !a.isTeammate && a.goneAt !== null)
-    // To the moment it handed its report in: `goneAt` is later by the walk out to the elevator.
-    .map(a => (a.goneAt ?? 0) - (a.walk?.durationMs ?? 0) - a.arrivedAt)
+    // To the moment it handed its report in. A helper saved before `doneAt` was kept is read from `goneAt`, which is
+    // later by the walk out to the elevator.
+    .map(a => (a.doneAt ?? (a.goneAt ?? 0) - (a.walk?.durationMs ?? 0)) - a.arrivedAt)
     .filter(ms => ms >= 1000)
     .sort((x, y) => x - y)
   if (took.length < MIN_SAMPLES) return null

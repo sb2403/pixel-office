@@ -379,3 +379,25 @@ export function splitAt(points: readonly Point[], fraction: number): Point[] {
 export function pointAlong(points: readonly Point[], fraction: number): Point {
   return splitAt(points, fraction)[0] ?? { x: 0, y: 0 }
 }
+
+const isOnCorridor = (p: Point): boolean => Math.abs(p.y - CORRIDOR_Y) < 0.01
+
+// The way back to the corridor from `fraction` along a walk, staying on the walk's own path: ahead to its next
+// point on the corridor or back to its last one, whichever is shorter. A walk that changes course takes it before
+// setting off for somewhere else, rather than cutting from where it stands through a wall. It starts where the
+// walker is and ends on the corridor (or where the walker is, when the path never reaches it).
+export function toCorridor(points: readonly Point[], fraction: number): Point[] {
+  const ahead = splitAt(points, fraction)
+  const here = ahead[0]
+  if (here === undefined) return []
+  if (isOnCorridor(here)) return [here]
+  const behind = splitAt([...points].reverse(), 1 - clamp(fraction, 0, 1))
+  const reach = (path: readonly Point[]): Point[] | null => {
+    const i = path.findIndex(isOnCorridor)
+    return i < 0 ? null : [here, ...path.slice(1, i + 1)]
+  }
+  const forward = reach(ahead)
+  const back = reach(behind)
+  if (forward === null || back === null) return forward ?? back ?? [here]
+  return pathLength(back) < pathLength(forward) ? back : forward
+}

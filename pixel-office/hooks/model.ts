@@ -14,6 +14,7 @@ import {
   route,
   slotPoint,
   stationFor,
+  toCorridor,
 } from './stations'
 
 export const MAIN = 'main'
@@ -131,6 +132,8 @@ function freeSlot(scene: Scene, station: StationId, selfId: string): number {
 
 const walkMs = (length: number): number => clamp(Math.round((length / WALK_SPEED) * 1000), 700, 7000)
 
+const isNear = (a: Point, b: Point): boolean => Math.hypot(a.x - b.x, a.y - b.y) < 0.5
+
 // Every walk drops whatever the agent was carrying, unless `item` says it carries something this time: it is
 // handed over when the walk reaches the first stop in `via`, the agent it is walking to.
 function moveTo(
@@ -152,14 +155,21 @@ function moveTo(
           ? 0
           : freeSlot(scene, station, agent.id)
   const dest = slotPoint(station, slot)
-  const walking = isWalkingAt(agent, at)
-  const start = positionAt(agent, at)
+  const current = agent.walk !== null && isWalkingAt(agent, at) ? agent.walk : null
+  // Sent back to where it stood before its walk began, it never left.
+  if (current !== null && via.length === 0 && at <= current.startedAt && isNear(current.points[0] as Point, dest)) {
+    return { ...agent, station, slot, pos: dest, walk: null, carry: null }
+  }
+  // A walk that changes course first gets back to the corridor along the path it is on.
+  const rejoin = current === null ? [] : toCorridor(current.points, (at - current.startedAt) / current.durationMs)
+  const lead = rejoin.length > 0 ? rejoin : [positionAt(agent, at)]
+  const start = lead[lead.length - 1] as Point
   const stops: Stop[] = [
-    { point: start, door: walking ? start : doorOf(agent.station, agent.slot) },
+    { point: start, door: current !== null ? start : doorOf(agent.station, agent.slot) },
     ...via,
     { point: dest, door: doorOf(station, slot) },
   ]
-  let points: Point[] = [start]
+  let points: Point[] = lead
   let handover = 0
   for (let i = 1; i < stops.length; i++) {
     const a = stops[i - 1] as Stop
@@ -292,34 +302,41 @@ export function isCoordinating(scene: Scene, agent: Agent): boolean {
   return waitingOn(scene, agent.id).length > 0
 }
 
-function endBriefing(scene: Scene, agent: Agent, at: number): Scene {
+function endBriefing(scene: Scene, agent: Agent, at: number, t: number): Scene {
   const stillBriefing = Object.values(scene.agents).some(a => a.phase === 'briefing')
   let out: Scene = stillBriefing ? scene : { ...scene, briefing: null }
   const parent = agent.parentId === null ? undefined : out.agents[agent.parentId]
   if (parent !== undefined && parent.station === 'meeting' && parent.activity === null && parent.phase !== 'gone') {
-    out = put(out, { ...moveTo(out, parent, homeOf(parent), at), lastEventAt: at })
+    out = put(out, { ...moveTo(out, parent, homeOf(parent), t), lastEventAt: at })
   }
   return out
 }
 
 // The agent walks to the meeting room to be briefed, its boss joins it there unless busy, and the whiteboard
 // shows the job.
-function brief(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
-  let s = put(scene, { ...moveTo(scene, agent, 'meeting', ev.at), phase: 'briefing' })
+function brief(scene: Scene, agent: Agent, ev: Ev<'spawned'>, t: number): Scene {
+  let s = put(scene, { ...moveTo(scene, agent, 'meeting', t), phase: 'briefing' })
   const parent = s.agents[ev.parentId]
   if (parent !== undefined && parent.activity === null && parent.phase !== 'gone') {
-    s = put(s, { ...moveTo(s, parent, 'meeting', ev.at), phase: 'working', lastEventAt: ev.at })
+    s = put(s, { ...moveTo(s, parent, 'meeting', t), phase: 'working', lastEventAt: ev.at })
   }
   return { ...s, briefing: ev.description }
 }
 
-// A called-back agent comes back by the elevator if it had left, starts a new stint and is briefed again. The
-// message it is called back with is its new brief; with none, the old brief still stands.
-function callBack(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
+// A helper back for more work after it handed in its report. One still on its way out turns round where it is;
+// one that has ridden away steps out of the elevator again.
+function comeBack(scene: Scene, agent: Agent, t: number): Partial<Agent> {
+  const hasLeft = agent.goneAt === null || t >= agent.goneAt
+  return { ...(hasLeft ? { station: 'elevator' as const, slot: 0, pos: slotPoint('elevator', 0), walk: null } : {}), desk: nextDesk(scene) }
+}
+
+// A called-back agent comes back if it had left, starts a new stint and is briefed again. The message it is
+// called back with is its new brief; with none, the old brief still stands.
+function callBack(scene: Scene, agent: Agent, ev: Ev<'spawned'>, t: number): Scene {
   const isBack = agent.phase === 'gone'
   const returning: Agent = {
     ...agent,
-    ...(isBack ? { station: 'elevator' as const, slot: 0, pos: slotPoint('elevator', 0), walk: null, desk: nextDesk(scene) } : {}),
+    ...(isBack ? comeBack(scene, agent, t) : {}),
     parentId: ev.parentId,
     description: ev.description,
     brief: ev.brief === '' ? agent.brief : ev.brief,
@@ -332,10 +349,10 @@ function callBack(scene: Scene, agent: Agent, ev: Ev<'spawned'>): Scene {
     arrivedAt: ev.at,
     lastEventAt: ev.at,
   }
-  return brief(scene, returning, ev)
+  return brief(scene, returning, ev, t)
 }
 
-function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
+function spawned(scene: Scene, ev: Ev<'spawned'>, t: number): Scene {
   const existing = scene.agents[ev.id]
   let s = scene
   const hire = {
@@ -348,9 +365,9 @@ function spawned(scene: Scene, ev: Ev<'spawned'>): Scene {
   }
   if (existing === undefined) {
     const fresh = { ...arrive(s, ev.id, ev.type, labelFor(s, ev.type, ev.name, ev.description), ev.at), ...hire }
-    s = brief(addAgent(s, fresh), fresh, ev)
+    s = brief(addAgent(s, fresh), fresh, ev, t)
   } else if (ev.isResume) {
-    s = callBack(s, existing, ev)
+    s = callBack(s, existing, ev, t)
   } else {
     const label = existing.type === 'contractor' ? labelFor(s, ev.type, ev.name, ev.description) : existing.label
     s = put(s, {
@@ -379,7 +396,7 @@ function findByName(scene: Scene, name: string, selfId: string): Agent | undefin
 
 const EDITING: ReadonlySet<string> = new Set(['Edit', 'Write', 'NotebookEdit'])
 
-function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
+function toolStarted(scene: Scene, ev: Ev<'toolStarted'>, t: number): Scene {
   let s = scene
   let agent = s.agents[ev.agentId]
   if (agent === undefined) {
@@ -388,16 +405,12 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
   } else if (agent.phase === 'gone') {
     agent = {
       ...agent,
+      ...comeBack(s, agent, t),
       phase: 'arriving',
-      station: 'elevator',
-      slot: 0,
-      pos: slotPoint('elevator', 0),
-      walk: null,
       goneAt: null,
       doneAt: null,
       outcome: null,
       carry: null,
-      desk: nextDesk(s),
       arrivedAt: ev.at,
     }
   }
@@ -407,10 +420,10 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
     const recipient = findByName(s, ev.target, agent.id)
     moved =
       recipient !== undefined
-        ? moveTo(s, agent, agent.station, ev.at, [beside(recipient)], 'message')
-        : moveTo(s, agent, 'meeting', ev.at)
+        ? moveTo(s, agent, agent.station, t, [beside(recipient)], 'message')
+        : moveTo(s, agent, 'meeting', t)
   } else {
-    moved = moveTo(s, agent, stationFor(ev.tool), ev.at)
+    moved = moveTo(s, agent, stationFor(ev.tool), t)
   }
   s = put(s, {
     ...moved,
@@ -418,13 +431,13 @@ function toolStarted(scene: Scene, ev: Ev<'toolStarted'>): Scene {
     activity: { tool: ev.tool, target: ev.target, detail: ev.detail, callId: ev.callId, since: ev.at },
     lastEventAt: ev.at,
   })
-  if (wasBriefing) s = endBriefing(s, agent, ev.at)
+  if (wasBriefing) s = endBriefing(s, agent, ev.at, t)
   // The coordinator is meant to hire helpers for edits; the recap says how many it made itself.
   if (agent.id === MAIN && EDITING.has(ev.tool) && s.job !== null) s = { ...s, job: { ...s.job, mainEdits: (s.job.mainEdits ?? 0) + 1 } }
   return withLine(s, ev.at, narrate(s, ev), isMilestone(ev.tool) ? null : agent.id)
 }
 
-function toolEnded(scene: Scene, ev: Ev<'toolEnded'>): Scene {
+function toolEnded(scene: Scene, ev: Ev<'toolEnded'>, t: number): Scene {
   const agent = scene.agents[ev.agentId]
   if (agent === undefined || agent.phase === 'gone') return scene
   const isCurrent = agent.activity?.callId === ev.callId
@@ -434,7 +447,7 @@ function toolEnded(scene: Scene, ev: Ev<'toolEnded'>): Scene {
     lastErrorAt: ev.isError ? ev.at : agent.lastErrorAt,
     lastEventAt: ev.at,
   }
-  if (isCurrent && agent.phase === 'waiting') next = { ...moveTo(scene, next, homeOf(next), ev.at), phase: 'working' }
+  if (isCurrent && agent.phase === 'waiting') next = { ...moveTo(scene, next, homeOf(next), t), phase: 'working' }
   return withLine(put(scene, next), ev.at, narrate(scene, ev))
 }
 
@@ -447,23 +460,23 @@ function latestUser(scene: Scene, tool: string): string {
   return best?.id ?? MAIN
 }
 
-function waiting(scene: Scene, ev: Ev<'waiting'>): Scene {
+function waiting(scene: Scene, ev: Ev<'waiting'>, t: number): Scene {
   const id = ev.agentId !== null && scene.agents[ev.agentId] !== undefined ? ev.agentId : latestUser(scene, ev.tool)
   const agent = scene.agents[id]
   if (agent === undefined || agent.phase === 'gone') return scene
-  const s = put(scene, { ...moveTo(scene, agent, 'reception', ev.at), phase: 'waiting', lastEventAt: ev.at })
+  const s = put(scene, { ...moveTo(scene, agent, 'reception', t), phase: 'waiting', lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, { ...ev, agentId: id }))
 }
 
 // A message from you starts a new job; a turn that carries on without one reopens the job it belongs to.
-function turnStarted(scene: Scene, ev: Ev<'turnStarted'>): Scene {
+function turnStarted(scene: Scene, ev: Ev<'turnStarted'>, t: number): Scene {
   const main = scene.agents[MAIN]
   if (main === undefined) return scene
   const job =
     ev.isContinuation && scene.job !== null
       ? { ...scene.job, endedAt: null }
       : { startedAt: ev.at, endedAt: null, task: ev.task, mainUsage: null, mainEdits: 0 }
-  const s = put({ ...scene, job }, { ...moveTo(scene, main, 'office', ev.at), phase: 'working', lastEventAt: ev.at })
+  const s = put({ ...scene, job }, { ...moveTo(scene, main, 'office', t), phase: 'working', lastEventAt: ev.at })
   return withLine(s, ev.at, narrate(s, ev))
 }
 
@@ -517,7 +530,7 @@ const OUTCOMES: Readonly<Record<Ev<'handedBack'>['reason'], Outcome>> = {
 
 // The helper carries its report to its boss, then leaves by the elevator (a teammate goes for a break instead).
 // When it was the last report its boss was waiting for, the feed says so: that is when the boss takes over again.
-function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
+function handedBack(scene: Scene, ev: Ev<'handedBack'>, t: number): Scene {
   const agent = scene.agents[ev.agentId]
   if (agent === undefined || agent.id === MAIN || agent.phase === 'gone') return scene
   const parent = agent.parentId === null ? undefined : scene.agents[agent.parentId]
@@ -527,10 +540,10 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
   const item = outcome === 'stopped' ? null : 'report'
   let next: Agent
   if (agent.isTeammate) {
-    next = { ...moveTo(scene, agent, 'breakroom', ev.at, via, item), phase: 'idle' }
+    next = { ...moveTo(scene, agent, 'breakroom', t, via, item), phase: 'idle' }
   } else {
-    const moved = moveTo(scene, agent, 'elevator', ev.at, via, item)
-    next = { ...moved, phase: 'gone', goneAt: ev.at + (moved.walk?.durationMs ?? 0) }
+    const moved = moveTo(scene, agent, 'elevator', t, via, item)
+    next = { ...moved, phase: 'gone', goneAt: t + (moved.walk?.durationMs ?? 0) }
   }
   const awaitedBy = isParentHere && waitingOn(scene, parent.id).some(a => a.id === agent.id) ? parent : undefined
   let s = put(scene, {
@@ -542,7 +555,7 @@ function handedBack(scene: Scene, ev: Ev<'handedBack'>): Scene {
     doneAt: ev.at,
     lastEventAt: ev.at,
   })
-  if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at)
+  if (agent.phase === 'briefing') s = endBriefing(s, agent, ev.at, t)
   s = trimTexts(prune(s))
   s = withLine(s, ev.at, narrate(s, ev))
   if (awaitedBy !== undefined && waitingOn(s, awaitedBy.id).length === 0) s = withLine(s, ev.at, allBackLine(awaitedBy.label))
@@ -573,38 +586,48 @@ export function needsSweep(scene: Scene, now: number): boolean {
   return Object.values(scene.agents).some(a => sweepTarget(a, now, isCoordinating(scene, a)) !== null)
 }
 
-function tick(scene: Scene, at: number): Scene {
+function tick(scene: Scene, at: number, t: number): Scene {
   let s = scene
   for (const id of scene.order) {
     const agent = s.agents[id]
     if (agent === undefined) continue
     const target = sweepTarget(agent, at, isCoordinating(s, agent))
     if (target === null) continue
-    s = put(s, { ...moveTo(s, agent, target, at), phase: target === 'breakroom' || agent.phase === 'idle' ? 'idle' : 'working' })
-    if (agent.phase === 'briefing') s = endBriefing(s, agent, at)
+    s = put(s, { ...moveTo(s, agent, target, t), phase: target === 'breakroom' || agent.phase === 'idle' ? 'idle' : 'working' })
+    if (agent.phase === 'briefing') s = endBriefing(s, agent, at, t)
   }
   return s
 }
 
 export function reduce(scene: Scene, ev: OfficeEvent): Scene {
+  return reduceAt(scene, ev, ev.at)
+}
+
+// The event as the picture plays it: `shownAt` is the first moment the picture can show it, and the walks it
+// starts begin then rather than at the event's own time. Begun at the event's time, a walk would already be part
+// way along when it first appeared (the wait for the next flush, and the time the picture takes to appear), so the
+// walker would leap ahead at the start of every walk. What the office reports (the feed, the recap, the clocks)
+// keeps the event's own time.
+export function reduceAt(scene: Scene, ev: OfficeEvent, shownAt: number): Scene {
+  const t = Math.max(ev.at, shownAt)
   switch (ev.kind) {
     case 'spawned':
-      return spawned(scene, ev)
+      return spawned(scene, ev, t)
     case 'toolStarted':
-      return toolStarted(scene, ev)
+      return toolStarted(scene, ev, t)
     case 'toolEnded':
-      return toolEnded(scene, ev)
+      return toolEnded(scene, ev, t)
     case 'waiting':
-      return waiting(scene, ev)
+      return waiting(scene, ev, t)
     case 'turnStarted':
-      return turnStarted(scene, ev)
+      return turnStarted(scene, ev, t)
     case 'turnEnded':
       return turnEnded(scene, ev)
     case 'handedBack':
-      return handedBack(scene, ev)
+      return handedBack(scene, ev, t)
     case 'todos':
       return { ...scene, todos: { done: ev.done, open: ev.open } }
     case 'tick':
-      return tick(scene, ev.at)
+      return tick(scene, ev.at, t)
   }
 }

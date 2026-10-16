@@ -228,6 +228,14 @@ describe('renderOffice', () => {
     expect(officeSource(thatToo, 4000)).toBe(renderOffice(thatToo, 4000 + LEAD_MS))
   })
 
+  test('a walk drawn before its first step plays from that step at its own pace', async () => {
+    const s = run([spawnEv('a1', 1000)])
+    const walk = s.agents.a1!.walk!
+    const group = groupOf(renderOffice(s, walk.startedAt - 300), 'a1')
+    expect(group).toContain(`<animateMotion dur="${walk.durationMs}ms"`)
+    expect(group).toContain(`path="M${walk.points[0]!.x},${walk.points[0]!.y} L`)
+  })
+
   test('a walking agent carries its bubble, so what it is about to do shows before it arrives', async () => {
     const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
     const group = groupOf(renderOffice(s, 1700), 'a1')

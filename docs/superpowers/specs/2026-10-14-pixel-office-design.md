@@ -387,6 +387,28 @@ delegate more is a job for prompts or agent definitions, not for this mod.
 - **Animation.** `$.ui.blit` and `Client` cannot help the desktop pane on 2.1.301; see
   `notes/2026-10-15-blit-spike.md`.
 
+## 0.5.0: walks that hold together
+
+Everything merged after 0.4.0 ships with it: the version string had not moved since, so installed copies kept
+0.4.0 (`claude plugin update` keeps the cached copy while the version matches).
+
+- **A walk begins when the picture can show it.** The flush applies each batch with
+  `reduceAt(scene, ev, now + LEAD_MS)`. Movement is timed from that moment: where a walk starts, when it begins,
+  `carry.until` and `goneAt`. The feed, the recap and the clocks keep the event's own time. Before, a walk began at
+  the hook's time, and the first picture to show it was drawn a flush (0 to 350 ms) plus `LEAD_MS` later, already
+  that far along: every walk opened with a jump, 26 cells median and up to 60 in a simulated three-helper session.
+- **A change of course stays on the corridors.** `toCorridor` takes a walker whose destination changes back to the
+  corridor along the path it was on, ahead or back, whichever is shorter, instead of straight up or down through a
+  wall. A walk redirected before its first step leaves by its room's own door, and one sent back to where it stood
+  is no walk at all.
+- **A helper called back on its way out turns round where it is**, or when it uses a tool again, instead of jumping
+  back to the elevator; one that has ridden away still steps out of it.
+- **Still open.** Each redraw of the single picture restarts every walk in it as of `LEAD_MS` ahead. When the
+  desktop takes longer or shorter than that to show a picture, every walker jumps by the difference: in the
+  simulation, a few cells per redraw at 100 or 400 ms, at about 1.4 redraws a second with three helpers. A picture
+  the desktop mounts again (out of view and back) replays from when it was drawn. Bubbles change lanes when a
+  neighbour's bubble comes or goes.
+
 ## Out of scope
 
 - Other sessions on the machine (a "building" view).

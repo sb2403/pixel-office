@@ -11,10 +11,11 @@ import {
   needsSweep,
   positionAt,
   reduce,
+  reduceAt,
   waitingOn,
   topicOf,
 } from '../hooks/model'
-import { slotPoint } from '../hooks/stations'
+import { CORRIDOR_Y, doorOf, slotPoint } from '../hooks/stations'
 import type { OfficeEvent, Scene } from '../types'
 
 const spawn = (id: string, at: number, extra: Partial<Extract<OfficeEvent, { kind: 'spawned' }>> = {}): OfficeEvent => ({
@@ -113,6 +114,108 @@ describe('arrivals and briefings', () => {
     const after = reduce(before, start('a1', 'Read', 'auth.ts', 'c1', 1200))
     expect(after.agents.a1!.walk?.points[0]).toEqual(positionAt(before.agents.a1!, 1200))
     expect(after.agents.a1!.walk?.points[0]).not.toEqual(slotPoint('elevator', 0))
+  })
+})
+
+describe('walks as the picture shows them', () => {
+  const batch = (events: OfficeEvent[], shownAt: number, from: Scene = emptyScene()): Scene =>
+    events.reduce((s, ev) => reduceAt(s, ev, shownAt), from)
+
+  test('a walk begins when the picture can first show it, and the feed keeps the event time', async () => {
+    const s = batch([start(MAIN, 'Bash', 'npm test', 'c1', 5000)], 5600)
+    const main = s.agents[MAIN]!
+    expect(main.walk?.startedAt).toBe(5600)
+    expect(positionAt(main, 5500)).toEqual(slotPoint('office', 0))
+    expect(main.activity?.since).toBe(5000)
+    expect(main.lastEventAt).toBe(5000)
+    expect(s.ticker[s.ticker.length - 1]?.at).toBe(5000)
+    // Applied as of its own time, it begins then.
+    expect(reduce(emptyScene(), start(MAIN, 'Bash', 'npm test', 'c1', 5000)).agents[MAIN]!.walk?.startedAt).toBe(5000)
+  })
+
+  test('two moves in one batch leave from where the agent stands, by its own door', async () => {
+    const walk = batch([start(MAIN, 'Read', 'a.ts', 'c1', 5000), start(MAIN, 'Bash', 'npm test', 'c2', 5100)], 5600).agents[MAIN]!.walk!
+    expect(walk.points[0]).toEqual(slotPoint('office', 0))
+    expect(walk.points[2]).toEqual(doorOf('office', 0))
+    expect(walk.points[walk.points.length - 1]).toEqual(slotPoint('server', 0))
+    expect(walk.startedAt).toBe(5600)
+  })
+
+  test('sent back to where it stood before its walk began, it never left', async () => {
+    const main = batch([start(MAIN, 'Read', 'a.ts', 'c1', 5000), start(MAIN, 'Edit', 'a.ts', 'c2', 5100)], 5600).agents[MAIN]!
+    expect(main.walk).toBeNull()
+    expect(main.station).toBe('office')
+    expect(main.pos).toEqual(slotPoint('office', 0))
+  })
+
+  test('a change of course gets back to the corridor along the path it is on, not through a wall', async () => {
+    const going = reduce(emptyScene(), start(MAIN, 'Bash', 'npm test', 'c1', 5000))
+    const pts = reduce(going, start(MAIN, 'Read', 'a.ts', 'c2', 5200)).agents[MAIN]!.walk!.points
+    expect(pts[0]).toEqual(positionAt(going.agents[MAIN]!, 5200))
+    expect(pts[0]!.y).toBe(slotPoint('office', 0).y)
+    expect(pts.slice(1, 4)).toEqual([{ x: doorOf('office', 0).x, y: pts[0]!.y }, doorOf('office', 0), { x: doorOf('office', 0).x, y: CORRIDOR_Y }])
+  })
+
+  test('a helper called back on its way out turns round where it is', async () => {
+    const s = run([spawn('a1', 1000), start('a1', 'Read', 'auth.ts', 'c1', 3000), end('a1', 'c1', 4000)])
+    const left = reduce(s, { kind: 'handedBack', agentId: 'a1', reason: 'answer', report: '', usage: null, at: 20000 })
+    const leaving = left.agents.a1!
+    expect(leaving.goneAt).toBeGreaterThan(21000)
+    expect(positionAt(leaving, 21000)).not.toEqual(slotPoint('elevator', 0))
+    const called = reduce(left, spawn('a1', 21000, { isResume: true }))
+    expect(called.agents.a1!.walk?.points[0]).toEqual(positionAt(leaving, 21000))
+    const working = reduce(left, start('a1', 'Read', 'again.ts', 'c9', 21000))
+    expect(working.agents.a1!.walk?.points[0]).toEqual(positionAt(leaving, 21000))
+  })
+
+  test('nobody in view moves in an instant, whatever happens', async () => {
+    // A fixed pseudo-random stream of everything an office sees, applied one by one and in flushes.
+    let seed = 7
+    const rand = (): number => ((seed = (Math.imul(seed ^ (seed >>> 15), 0x2c1b3c6d) + 0x9e3779b9) >>> 0) % 1e6) / 1e6
+    const ids = ['a', 'b', 'c', 'd']
+    const pick = <T,>(list: readonly T[]): T => list[Math.floor(rand() * list.length)] as T
+    const tools = ['Read', 'Bash', 'Edit', 'WebFetch', 'TodoWrite', 'mcp__x__y', 'SendMessage', 'AskUserQuestion']
+    const inView = (a: Scene['agents'][string] | undefined, at: number): boolean =>
+      a !== undefined && !(a.phase === 'gone' && a.goneAt !== null && at >= a.goneAt)
+    const jumps: string[] = []
+    for (let round = 0; round < 80; round++) {
+      let s = emptyScene()
+      let at = 100
+      const isBatched = round % 2 === 1
+      let shownAt = 0
+      for (let i = 0; i < 100; i++) {
+        at += Math.round(rand() * 1200)
+        if (!isBatched || i % 3 === 0) shownAt = at + 250
+        const id = pick(ids)
+        const x = rand()
+        const ev: OfficeEvent =
+          x < 0.12
+            ? spawn(id, at, { parentId: rand() < 0.7 ? MAIN : pick(ids), isTeammate: rand() < 0.2, isBackground: rand() < 0.3, isResume: rand() < 0.4 })
+            : x < 0.55
+              ? (() => { const tool = pick(tools); return start(rand() < 0.15 ? MAIN : id, tool, tool === 'SendMessage' ? pick(ids) : 'x', `${id}`, at) })()
+              : x < 0.8
+                ? end(id, id, at, rand() < 0.1)
+                : x < 0.86
+                  ? { kind: 'waiting', agentId: rand() < 0.5 ? id : null, tool: 'Bash', at }
+                  : x < 0.92
+                    ? { kind: 'handedBack', agentId: id, reason: 'answer', report: '', usage: null, at }
+                    : x < 0.96
+                      ? rand() < 0.5 ? { kind: 'turnStarted', isContinuation: false, task: '', at } : { kind: 'turnEnded', usage: null, at }
+                      : { kind: 'tick', at: at + (rand() < 0.5 ? LINGER_MS + 1000 : IDLE_MS + 1000) }
+        const before = s
+        s = isBatched ? reduceAt(s, ev, shownAt) : reduce(s, ev)
+        const t = isBatched ? Math.max(ev.at, shownAt) : ev.at
+        for (const aid of Object.keys(s.agents)) {
+          const was = before.agents[aid]
+          const now = s.agents[aid]
+          if (!inView(was, t) || !inView(now, t)) continue
+          const p = positionAt(was!, t)
+          const q = positionAt(now!, t)
+          if (Math.hypot(p.x - q.x, p.y - q.y) > 0.5) jumps.push(`${ev.kind} moved ${aid} from ${p.x},${p.y} to ${q.x},${q.y}`)
+        }
+      }
+    }
+    expect(jumps).toEqual([])
   })
 })
 
