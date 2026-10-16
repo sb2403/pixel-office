@@ -159,7 +159,7 @@ describe('reading what others wrote', () => {
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
     expect(Object.keys(p!)).not.toContain('__proto__')
     const sneaky = parsePeer(JSON.stringify(peer({ project: '\u001b[31mred\u202e\u0085x', task: 'ok\u0000' })))
-    expect(sneaky?.project).toBe('[31mredx')
+    expect(sneaky?.project).toBe('redx')
     expect(sneaky?.task).toBe('ok')
   })
 
@@ -295,5 +295,7 @@ describe('the list', () => {
     expect(shownOf(a)).not.toBe(shownOf([peer({ doing: 'editing files' })]))
     expect(urgentOf(a)).not.toBe(urgentOf([peer({ status: 'waiting' })]))
     expect(urgentOf(a)).not.toBe(urgentOf([]))
+    const b = peer({ sessionId: 'b', instance: 'b' })
+    expect(urgentOf([a[0]!, b])).toBe(urgentOf([b, a[0]!]))
   })
 })

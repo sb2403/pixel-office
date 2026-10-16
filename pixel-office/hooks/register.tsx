@@ -100,11 +100,18 @@ type Peers = {
   status: PeerStatus | null
   since: number
   isBusy: boolean
+  // Counts the looks. A look that overran LOOK_MAX_MS is let go: the next one starts, and the old one, if its disk
+  // call ever comes back, finds the count moved on and changes nothing.
+  looks: number
+  // The file a look is reading now, and the files a look was let go on: those are left alone from then on, as
+  // odd slots are, so one file that never answers cannot stop every later look.
+  reading: string | null
+  stuck: Set<string>
   isEnded: boolean
   run: Promise<void> | null
   // Each slot file last read as a snapshot, by name, with the size and time it had then. A file that did not
   // parse is never kept, so it is read again next time.
-  cache: Map<string, { mtimeMs: number; size: number; peer: PeerSession }>
+  cache: Map<string, { mtimeMs: number; size: number; readAt: number; peer: PeerSession }>
   urgent: string
   shown: string
   shownAt: number
@@ -256,6 +263,11 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
 
 // Whether `every` has passed since `at`. A clock set back makes it due at once, so the beat goes on rather than
 // stopping until the clock catches up again.
+// A look that takes longer than this is let go; each wait at the end of a session is shorter still.
+const LOOK_MAX_MS = 5000
+const END_WAIT_MS = 300
+const MTIME_SLACK_MS = 2000
+
 const isDue = (now: number, at: number, every: number): boolean => now < at || now - at >= every
 
 async function peerDir($: EngineInterface): Promise<string | null> {
@@ -268,7 +280,7 @@ async function peerDir($: EngineInterface): Promise<string | null> {
 // Reads the slots that changed since they were last read. A slot that is not a plain small file (a link, a folder,
 // something big) is marked odd: never read, never written to, never free. Null when the folder is there but cannot
 // be listed: every slot would look free, and this copy must not write into one another holds.
-async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise<Map<number, SlotSeen> | null> {
+async function readSlots($: EngineInterface, peers: Peers, dir: string, now: number): Promise<Map<number, SlotSeen> | null> {
   const seen = new Map<number, SlotSeen>()
   const listed: FsEntry[] | null = await $.fs.list(dir).catch(() => null)
   if (listed === null && (await $.fs.exists(dir).catch(() => true))) return null
@@ -276,21 +288,26 @@ async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise
   for (const entry of entries) {
     const slot = slotOf(entry.name)
     if (slot === null) continue
-    if (entry.kind !== 'file' || entry.isLink || entry.size > PEER_FILE_MAX) {
+    if (entry.kind !== 'file' || entry.isLink || entry.size > PEER_FILE_MAX || peers.stuck.has(entry.name)) {
       seen.set(slot, { peer: null, mtimeMs: entry.mtimeMs, isOdd: true })
       continue
     }
-    // This copy's own slot is always read afresh: it is how a copy learns another took it.
+    // This copy's own slot is always read afresh: it is how a copy learns another took it. So is a file read within
+    // MTIME_SLACK_MS of its last change: a rewrite of the same size in the same tick of a coarse file clock (FAT,
+    // a network share) would keep its time, and the change would go unseen.
     const cached = peers.cache.get(entry.name)
-    if (slot !== peers.slot && cached !== undefined && cached.mtimeMs === entry.mtimeMs && cached.size === entry.size) {
+    const isSettled = cached !== undefined && cached.readAt - cached.mtimeMs > MTIME_SLACK_MS
+    if (slot !== peers.slot && isSettled && cached.mtimeMs === entry.mtimeMs && cached.size === entry.size) {
       seen.set(slot, { peer: cached.peer, mtimeMs: entry.mtimeMs, isOdd: false })
       continue
     }
+    peers.reading = entry.name
     const text: unknown = await $.fs.read(`${dir}/${entry.name}`).catch(() => null)
+    peers.reading = null
     const peer = typeof text === 'string' ? parsePeer(text) : null
     // A file caught half written keeps its last good copy, which ages out as any other, and stays uncached so the
     // next look reads it again; a session does not drop out of the list for one bad read.
-    if (peer !== null) peers.cache.set(entry.name, { mtimeMs: entry.mtimeMs, size: entry.size, peer })
+    if (peer !== null) peers.cache.set(entry.name, { mtimeMs: entry.mtimeMs, size: entry.size, readAt: now, peer })
     seen.set(slot, { peer: peer ?? cached?.peer ?? null, mtimeMs: entry.mtimeMs, isOdd: false })
   }
   return seen
@@ -298,7 +315,7 @@ async function readSlots($: EngineInterface, peers: Peers, dir: string): Promise
 
 // One look at the other sessions, at most every POLL_MS: read the slots, keep (or claim) this copy's own, write its
 // snapshot when it changed or a heartbeat is due, and hand the pane the others when what it shows has changed.
-async function lookAround($: EngineInterface, office: Office, peers: Peers): Promise<void> {
+async function lookAround($: EngineInterface, office: Office, peers: Peers, look: number): Promise<void> {
   const now = await $.clock.now()
   if (!isDue(now, peers.lastPoll, POLL_MS)) return
   peers.lastPoll = now
@@ -309,8 +326,8 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
   // Read every time: a /clear goes on under a new session id.
   const sessionId = await $.session.id()
   const self = { instance: peers.instance, sessionId }
-  const seen = await readSlots($, peers, dir)
-  if (seen === null) return
+  const seen = await readSlots($, peers, dir, now)
+  if (seen === null || look !== peers.looks) return
 
   // Two copies that took one slot at once: the one that sees the other's snapshot there moves.
   const mine = peers.slot === null ? undefined : seen.get(peers.slot)
@@ -346,7 +363,7 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
     const snapshot = snapshotOf(scene, { instance: peers.instance, sessionId, startedAt: peers.startedAt, project, since: peers.since }, now)
     const content = contentOf(snapshot)
     // Checked last thing before the write: once the session has ended its tombstone must be the slot's last word.
-    if ((content !== peers.lastContent || isDue(now, peers.lastBeat, BEAT_MS)) && !peers.isEnded) {
+    if ((content !== peers.lastContent || isDue(now, peers.lastBeat, BEAT_MS)) && !peers.isEnded && look === peers.looks) {
       await $.fs.write(`${dir}/${slotName(peers.slot)}`, JSON.stringify(snapshot))
       peers.lastContent = content
       peers.lastBeat = now
@@ -356,6 +373,7 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers): Pro
   const others = livePeersOf(seen, self, now)
   const urgent = urgentOf(others)
   const shown = shownOf(others)
+  if (look !== peers.looks) return
   if (urgent !== peers.urgent || (shown !== peers.shown && isDue(now, peers.shownAt, CALM_MS))) {
     peers.urgent = urgent
     peers.shown = shown
@@ -388,8 +406,16 @@ function peerTick($: EngineInterface, office: Office): void {
   const peers = office.peers
   if (peers === null || peers.isBusy || peers.isEnded) return
   peers.isBusy = true
-  peers.run = quietly(() => lookAround($, office, peers)).finally(() => {
+  peers.looks += 1
+  const look = peers.looks
+  const ran = quietly(() => lookAround($, office, peers, look))
+  peers.run = Promise.race([ran, quietly(() => $.clock.sleep(LOOK_MAX_MS))]).finally(() => {
+    if (peers.looks !== look) return
     peers.isBusy = false
+    // Let go: whatever the overrun look does when it comes back, it changes nothing.
+    peers.looks += 1
+    if (peers.reading !== null) peers.stuck.add(peers.reading)
+    peers.reading = null
   })
 }
 
@@ -400,12 +426,18 @@ async function endPeers($: EngineInterface, office: Office): Promise<void> {
   const peers = office.peers
   if (peers === null || peers.isEnded) return
   peers.isEnded = true
-  if (peers.run !== null) await peers.run
+  // Each wait is short, as the whole end of a session has a bound of its own and a stuck disk must not use it up.
+  if (peers.run !== null) await Promise.race([peers.run, quietly(() => $.clock.sleep(END_WAIT_MS))])
   if (peers.slot === null || typeof peers.dir !== 'string') return
   const now = await $.clock.now()
   if (Math.abs(now - peers.verifiedAt) > STALE_MS) return
+  // Only over this copy's own snapshot: another copy may have taken the slot since the last look.
+  const path = `${peers.dir}/${slotName(peers.slot)}`
+  const text: unknown = await Promise.race([$.fs.read(path).catch(() => null), quietly(() => $.clock.sleep(END_WAIT_MS)).then(() => null)])
+  const held = typeof text === 'string' ? parsePeer(text) : null
+  if (held?.instance !== peers.instance) return
   const meta = { instance: peers.instance, sessionId: await $.session.id(), startedAt: peers.startedAt, project: '', since: now }
-  await $.fs.write(`${peers.dir}/${slotName(peers.slot)}`, JSON.stringify(tombstoneOf(meta, now)))
+  await $.fs.write(path, JSON.stringify(tombstoneOf(meta, now)))
 }
 
 export const register: Register = (on, options) => {
@@ -440,6 +472,9 @@ export const register: Register = (on, options) => {
             status: null,
             since: 0,
             isBusy: false,
+            looks: 0,
+            reading: null,
+            stuck: new Set(),
             isEnded: false,
             run: null,
             cache: new Map(),

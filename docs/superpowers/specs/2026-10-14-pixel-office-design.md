@@ -463,8 +463,12 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
 - **Timing.** Its own loop on the flush timer, with its own busy flag, so a slow disk never holds up the office: a look
   every 2 s, a write when the snapshot changed or every 6 s. The `others` atom is written at once when a session
   comes, goes, or starts or stops waiting on the person, and otherwise at most every 10 s, as each redraw restarts the walks.
-- **Ending.** `session.end` (not `clear` or `resume`, which go on under a new id) marks the copy ended, lets a look
-  under way finish, and writes one tombstone, only into a slot it saw as its own within the stale window.
+- **A stuck disk.** A look that takes over 5 s is let go (a count of looks makes a late one change nothing), and the file
+  it was reading is left alone from then on. A file read within 2 s of its last change is read again next look, as a
+  coarse file clock can hide a rewrite of the same size.
+- **Ending.** `session.end` (not `clear` or `resume`, which go on under a new id) marks the copy ended, waits at most
+  300 ms for a look under way, reads its slot (at most 300 ms) and writes one tombstone, only over its own snapshot and
+  only if it saw the slot as its own within the stale window.
 - **Kept out.** Transcript files under `~/.claude/projects` (an undocumented format), `$.store` (one file, no lock), and
   any network.
 

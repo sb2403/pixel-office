@@ -132,7 +132,9 @@ const isText = (value: unknown): value is string => typeof value === 'string'
 const isTime = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
 // Beyond what `gist` drops: the C1 controls and the marks that reorder text on screen.
 const UNSEEN = /[\u0080-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g
-const cleaned = (text: string, max: number): string => gist(text.slice(0, max * 4).replace(UNSEEN, ''), max)
+// A whole terminal escape sequence goes, not only its escape character, which would leave "[31m" on show.
+const ESCAPES = /\u001B(\[[0-?]*[ -\/]*[@-~]|\][^\u0007\u001B]*(\u0007|\u001B\\)?|[@-_])/g
+const cleaned = (text: string, max: number): string => gist(text.slice(0, max * 4).replace(ESCAPES, '').replace(UNSEEN, ''), max)
 
 export function parsePeer(text: string): PeerSession | null {
   let raw: unknown
@@ -269,8 +271,9 @@ export function peersHeading(peers: readonly PeerSession[]): string {
 
 // What would make the pane redraw at once (a session came or went, or started waiting on you), and everything the
 // list shows: a change only in the second waits for the calm window.
+// Sorted, so a change that only reorders the list (one session going from working to idle) is not urgent.
 export const urgentOf = (peers: readonly PeerSession[]): string =>
-  JSON.stringify(peers.map(p => [p.sessionId, p.instance, p.status === 'waiting']))
+  JSON.stringify(peers.map(p => `${p.sessionId}:${p.instance}:${p.status === 'waiting' ? 'w' : '-'}`).sort())
 export const shownOf = (peers: readonly PeerSession[]): string =>
   JSON.stringify(peers.map(p => [p.sessionId, p.instance, p.project, p.status, p.since, p.doing, p.task]))
 

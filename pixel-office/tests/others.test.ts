@@ -22,7 +22,7 @@ const LOOK = POLL_MS + 400
 
 type File = { text: string; mtimeMs: number; kind?: FsEntry['kind']; isLink?: boolean }
 
-function world(on: On, files: Record<string, File> = {}, { isListBroken = false } = {}) {
+function world(on: On, files: Record<string, File> = {}, { isListBroken = false, hangs = (_path: string): boolean => false } = {}) {
   const clock = mock.clock(on, { now: new Date(2026, 9, 16, 12, 0).getTime() })
   mock.env(on, { HOME: '/home/me' })
   const fs = new Map<string, File>(Object.entries(files).map(([name, file]) => [`${DIR}/${name}`, file]))
@@ -34,6 +34,7 @@ function world(on: On, files: Record<string, File> = {}, { isListBroken = false 
     return { value: undefined }
   })
   on('fs.read', ($, e) => {
+    if (hangs(e.path)) return new Promise<never>(() => {})
     const file = fs.get(e.path)
     return file === undefined ? { deny: 'ENOENT' } : { value: file.text }
   })
@@ -319,4 +320,27 @@ test('a session caught half way through a write stays in the list', ON, async ($
   await clock.advance(LOOK)
   const ui = await mount($)
   expect(await ui.find({ type: 'Text', text: /api-server · working/ })).toBeDefined()
+})
+
+test('a file that never answers is let go, and the rest goes on', ON, async ($, on) => {
+  let isHung = false
+  const { clock, put, writes } = world(on, {}, { hangs: path => isHung && path.endsWith(slotName(7)) })
+  const now = clock.now()
+  put(slotName(7), { text: other(now), mtimeMs: now })
+  put(slotName(8), { text: other(now, { instance: 'b', sessionId: 's-b', project: 'bee' }), mtimeMs: now })
+  await start($)
+  await clock.advance(LOOK)
+  isHung = true
+  put(slotName(7), { text: other(clock.now(), { doing: 'editing files' }), mtimeMs: clock.now() })
+  const before = writes.length
+  // Slot 8 stops beating: once the hung look is let go, later looks drop it, and this copy keeps beating.
+  await clock.advance(STALE_MS * 3)
+  expect(writes.length).toBeGreaterThan(before)
+  const ui = await mount($)
+  expect(await ui.find({ type: 'Text', text: /bee/ })).toBeUndefined()
+  await ui.unmount()
+  // The end of the session does not wait on it either.
+  const ended = $.session.end({ reason: 'prompt_input_exit', sessionId: 's-me', resume: { id: 's-me' } })
+  await clock.advance(1000)
+  await ended
 })

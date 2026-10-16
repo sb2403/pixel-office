@@ -119,3 +119,14 @@ Three reviewers (engine fit, adversarial, product) read the plan above before an
   hidden when there are none. No helper count.
 - **Reminders**: with `notify` on, another session waiting on you for 30 s is said once as a toast only, since that
   session raises its own notification.
+
+## Changes after the code review
+
+A correctness review, a conventions review (which also ran the suite on Claude Code 2.1.295) and an adversarial pass
+with its own attack suite (many copies on one folder, hung reads, clock jumps, garbage) found these, now fixed and
+tested: a folder that cannot be listed made every slot look free; a half-written slot dropped its session for a look;
+a clock set back stopped the beat; one read that never answers stopped every later look and held up the session's
+end; a tombstone could land on a copy that had just taken the slot; a same-size rewrite in one tick of a coarse file
+clock went unseen; a change that only reordered the list skipped the calm window; escape sequences left "[31m" on
+show; the docs said a little more than the code does. Held up: 32 copies starting at once settle in distinct slots,
+the tombstone stays the last word, crashed writers age out, and junk files are ignored.
