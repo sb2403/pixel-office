@@ -75,7 +75,7 @@ The numbers below match the numbers in the picture.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 6. **Show this job.** A button that opens the recap of the job in front of you: see below.
 
-The office is drawn as one picture, afresh each time the pane is drawn. The app starts a picture's animations over whenever it draws the pane, even when the picture has not changed, so a picture kept from an earlier draw would put every walker back where it was then and make it walk that stretch again. There is also an experimental layered mode, where the scenery, the cat and each agent are separate pictures stacked over each other. It was meant to keep one agent's moves from restarting another's walk, but the app starts every picture over at each draw, so it does nothing the single picture does not; set the `picture` option to `layered` only to experiment (see Commands and options).
+The office is drawn as one picture, afresh each time the pane is drawn. The app starts a picture's animations over whenever it draws the pane, even when the picture has not changed, so a picture kept from an earlier draw would put every walker back where it was then and make it walk that stretch again. Walkers can still shift a little at a redraw when the app takes longer or shorter to show one picture than it took for the one before.
 
 ## The office cat
 
@@ -158,16 +158,11 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 - `off` (default): no reminders.
 - `after-30s`: once an agent has waited 30 seconds for your answer, permission or plan approval, the office says so once, naming the agent ("Researcher is waiting for your permission"). It shows a toast over the conversation, and raises a notification through your notification setting. In a terminal that is a desktop notification or a bell, as your terminal does them; the Claude desktop app shows the toast, and only your own notification hooks run there. Claude Code may already notify you when it needs you; if the two double up, leave this off.
 
-**`picture`** decides how the office is drawn:
-
-- `single` (default): one picture for everybody, drawn afresh each time the pane is drawn. Walkers can still jump a little when the app takes longer or shorter to show one picture than it took for the one before.
-- `layered` (experimental): the scenery, the cat and each agent as separate pictures stacked over each other. The app starts each of them over whenever it draws the pane, as it does the single picture, so it offers nothing over `single` today.
-
 **`debug`** is for troubleshooting (for example, walkers that jump), and is off by default:
 
 - `off` (default): nothing is recorded, and nothing extra runs.
 - `on`: the mod keeps a log of what it does and writes it to `pixel-office/debug/log.jsonl` inside the plugin's folder, rewritten at most once a second and capped at the newest 3000 lines. It also draws two invisible one-cell probes in the pane (top and bottom) that report when the app mounts them, which happens again after the app unmounts and remounts them (for example when you scroll), and once a second the size of their region. Only event kinds, agent ids, tool names, counts, sizes and timings are logged: never commands, file names, labels, briefs, reports or any of your text. Send the file when asked to look into a problem, and set `debug` back to `off` afterwards.
-- How to read it: one JSON object per line, with `t` (milliseconds) and `kind`: `render` (the pane was drawn, with its scroll and panel state), `layers` (how many agent pictures a layered render had), `event` (something an agent did), `flush` (a batch of events applied, and how long it took), `turn-start`, `turn-ignored` (a helper's own turn, which is not a new task) and `probe` (what the pane reported back).
+- How to read it: one JSON object per line, with `t` (milliseconds) and `kind`: `render` (the pane was drawn, with its scroll and panel state), `event` (something an agent did), `flush` (a batch of events applied, and how long it took), `turn-start`, `turn-ignored` (a helper's own turn, which is not a new task) and `probe` (what the pane reported back).
 
 Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
 

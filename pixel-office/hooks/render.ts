@@ -496,27 +496,6 @@ function rankedAgents(scene: Scene, now: number): Agent[] {
     .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt))
 }
 
-// The picture as layers: the scenery, the cat and each agent as its own transparent picture stacked over it. The
-// desktop starts every picture over whenever the pane is drawn, so each is drawn afresh as of then, as the single
-// picture is; stacking them keeps no agent's walk apart from another's on today's desktop.
-export const MAX_LAYERS = 24
-export type Layer = { key: string; source: string }
-
-export function officeLayers(scene: Scene, now: number): { base: Layer; pet: Layer; agents: Layer[] } {
-  const at = now + LEAD_MS
-  const visible = rankedAgents(scene, at)
-  const ids = new Set(visible.slice(0, MAX_LAYERS).map(a => a.id))
-  const drawn = scene.order.filter(id => ids.has(id)).flatMap(id => (scene.agents[id] === undefined ? [] : [scene.agents[id]!]))
-  const extra = visible.length - drawn.length
-  const below = tagsBelow(drawn, at)
-  const lanes = bubbleLanes(drawn, scene, at)
-  return {
-    base: { key: 'base', source: `${ROOT}${OFFICE_DEFS}${officeBase(isNight(at))}${officeDecor()}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>` },
-    pet: { key: 'pet', source: `${ROOT}${petSvg(at)}</svg>` },
-    agents: drawn.map(a => ({ key: `agent-${a.id}`, source: `${ROOT}${drawAgent(a, scene, at, below.has(a.id), lanes.get(a.id) ?? 0)}</svg>` })),
-  }
-}
-
 export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {
   const ranked = rankedAgents(scene, now)
   const head = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}`
