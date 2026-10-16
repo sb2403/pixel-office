@@ -193,6 +193,27 @@ test('with the layered picture, the scenery and each agent are their own picture
   }
 })
 
+test('a render with nothing new in the scene still draws each walk on from where it has got to', async ($, on) => {
+  const { clock } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(FLUSH)
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  const walkLeft = async (): Promise<number> => {
+    const svg = String((await ui.find({ type: 'Svg' }))?.props.source)
+    return Number(/<g id="agent-agent-1">[\s\S]*?<animateMotion dur="(\d+)ms"/.exec(svg)?.[1])
+  }
+  const first = await walkLeft()
+  // An open row keeps the job clock ticking, which draws the pane again while the scene stays as it was. The desktop
+  // starts the picture over at each of those renders, so each must show the helper where it has got to by then.
+  await ui.press({ key: 'agent-agent-1' })
+  await clock.advance(1100)
+  const later = await walkLeft()
+  expect(first).toBeGreaterThan(0)
+  expect(later).toBeGreaterThan(0)
+  expect(later).toBeLessThan(first)
+})
+
 test('a spawn returns before the pane opens', async ($, on) => {
   const { clock, opened } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
@@ -782,31 +803,6 @@ test('with debug on, the flush writes the log, and the desktop pane carries two 
   expect(last).toContain('"element":"probe-top"')
   expect(last).toContain('"msg":"mounted"')
   expect(last).not.toContain('secret')
-  debugOn(false)
-  clearLog()
-})
-
-test('with debug on, a layered pane has a probe laid out as an agent layer, and its size is logged', { options: { debug: 'on', picture: 'layered' } }, async ($, on) => {
-  clearLog()
-  const { clock } = world(on)
-  const writes = watchWrites(on)
-  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
-  await $.agent.spawn(SPAWN)
-  await clock.advance(FLUSH)
-  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
-  const box = await ui.find({ type: 'Box', key: 'probe-layer-box' })
-  const layer = await ui.find({ type: 'Box', key: 'agent-agent-1' })
-  expect(box).toBeDefined()
-  expect(layer?.props.position).toBe('absolute')
-  for (const prop of ['position', 'top', 'left', 'width', 'height']) expect(box?.props[prop]).toEqual(layer?.props[prop])
-  const probe = await ui.find({ type: 'Client', key: 'probe-layer' })
-  expect(probe?.props.width).toBe('100%')
-  expect(probe?.props.height).toBe('100%')
-  await ui.post({ kind: 'tick', where: 'layer', columns: 100, rows: 0 }, { in: 'probe-layer' })
-  await clock.advance(FLUSH)
-  const last = writes.filter(w => LOG_FILE.test(w.path)).pop()!.text
-  expect(last).toContain('"element":"probe-layer"')
-  expect(last).toContain('"rows":0')
   debugOn(false)
   clearLog()
 })

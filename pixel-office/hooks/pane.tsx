@@ -4,9 +4,9 @@ import type { On } from 'claude-code'
 import type { JobRecord } from '../types'
 import { note } from './debuglog'
 import { emptyScene, restore } from './model'
-import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, scrollKey, svgSize } from './render'
+import { STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
-import { PANE, PROBE_BOTTOM, PROBE_LAYER, PROBE_TOP } from './state'
+import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
 const ORG_MAX = 14
@@ -75,25 +75,15 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
     const { Box, Text, Button, Svg, Markdown, Client } = $.ui.resolve(e)
     const chosen = selected === null ? undefined : scene.agents[selected]
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
-    // Layered: the scenery is one picture and each agent its own, stacked over it, so one agent's event only redraws
-    // that agent's picture. The panel's own state (a selected row, the legend) is deliberately not part of it.
-    let redrawn = 0
-    const trace =
-      isDebug === true
-        ? (d: Record<string, unknown>): void => {
-            if (d.layer === 'agent') redrawn += 1
-            note('draw', d, now)
-          }
-        : undefined
-    const key = scrollKey(e.props.scroll?.offset ?? 0)
-    const layers = isLayered ? officeLayers(scene, now, key, trace) : undefined
+    // Every picture is drawn afresh at every render, as of now: the desktop starts a picture over whenever the pane is
+    // drawn, even when its text is unchanged, so a picture kept from an earlier render would replay that moment.
+    const layers = isLayered ? officeLayers(scene, now) : undefined
     if (isDebug === true) {
       note(
         'render',
         {
           mode: layers === undefined ? 'single' : 'layered',
           scroll: e.props.scroll?.offset ?? 0,
-          ...(layers === undefined ? {} : { scrollKey: key }),
           columns: e.props.bodyColumns,
           selected: selected !== null,
           jobOpen: isJobOpen,
@@ -102,12 +92,12 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
         },
         now,
       )
-      if (layers !== undefined) note('layers', { n: layers.agents.length, redrawn }, now)
+      if (layers !== undefined) note('layers', { n: layers.agents.length }, now)
     }
     const officePicture =
       layers !== undefined
         ? layers.base.source
-        : officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}|${Math.floor((e.props.scroll?.offset ?? 0) / SCROLL_BUCKET)}`)
+        : officeSource(scene, now)
     const size = fitSize(svgSize(officePicture), e.props.bodyColumns)
     const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
@@ -127,12 +117,6 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
                 <Svg key={layer.key + '-svg'} source={layer.source} alt={'Layer for ' + layer.key.replace(/^agent-/, '')} {...size} />
               </Box>
             ))}
-            {isDebug === true && (
-              // Laid out as an agent's layer is: a layer the desktop gives no room shows in the log as a probe with none.
-              <Box key="probe-layer-box" position="absolute" top={0} left={0} width="100%" height="100%">
-                <Client key={PROBE_LAYER} module="./probe.tsx" props={{ where: 'layer' }} width="100%" height="100%" />
-              </Box>
-            )}
           </Box>
         )}
         <Box flexDirection="row" gap={2}>

@@ -222,18 +222,13 @@ const BUBBLE_HEIGHT = 10
 const BUBBLE_STEP = 11
 const BUBBLE_LANES = 3
 
-function bubbleLanes(
-  agents: readonly Agent[],
-  scene: Scene,
-  now: number,
-  positionOf = (a: Agent) => positionAt(a, now),
-): Map<string, number> {
+function bubbleLanes(agents: readonly Agent[], scene: Scene, now: number): Map<string, number> {
   const placed: Array<{ x0: number; x1: number; y0: number; y1: number }> = []
   const lanes = new Map<string, number>()
   for (const agent of agents) {
     const box = bubbleBox(agent, scene)
     if (box === null) continue
-    const at = positionOf(agent)
+    const at = positionAt(agent, now)
     const x0 = at.x + box.left
     const x1 = x0 + box.width
     let found = -1
@@ -299,11 +294,11 @@ const TAG_CHAR = 2.1
 
 type TagSpot = { x0: number; x1: number; y: number; isBelow: boolean }
 
-export function tagsBelow(agents: readonly Agent[], now: number, positionOf = (a: Agent) => positionAt(a, now)): Set<string> {
+export function tagsBelow(agents: readonly Agent[], now: number): Set<string> {
   const placed: TagSpot[] = []
   const below = new Set<string>()
   for (const agent of agents) {
-    const pos = positionOf(agent)
+    const pos = positionAt(agent, now)
     const half = (Array.from(agent.label).length * TAG_CHAR) / 2 + 0.5
     const spot = { x0: pos.x - half, x1: pos.x + half, y: pos.y }
     const overlap = (isBelow: boolean): number =>
@@ -339,7 +334,7 @@ export function etaBar(scene: Scene, agent: Agent, now: number): string {
 
 function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false, lane = 0): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
-  // The clock line ticks every second; keeping it out of the drawing keeps an idle office's source unchanged.
+  // The panel's own lines (the brief, the report, the ticking job clock) stay out of the picture's title.
   const facts = agentDetails(scene, agent.id, now).filter(line => !PANEL_ONLY.some(start => line.startsWith(start)))
   const head = `<title>${escapeXml(facts.join('\n'))}</title>${leaveAt(agent, now)}`
   const tag =
@@ -445,8 +440,7 @@ function badge(extra: number): string {
   return `<g>${rect(196, 1, 42, 7, '#2c2c2a')}<text x="217" y="6.3" font-size="4.5" text-anchor="middle" fill="#ffffff">+${extra} more</text></g>`
 }
 
-// The moment the scene last changed: an event, the start of a walk, an error. It tells the pane when the picture
-// has to be drawn again.
+// The moment the scene last changed: an event, the start of a walk, an error.
 export function sceneTimeOf(scene: Scene): number {
   let latest = scene.ticker[scene.ticker.length - 1]?.at ?? 0
   for (const a of Object.values(scene.agents)) {
@@ -457,17 +451,6 @@ export function sceneTimeOf(scene: Scene): number {
 
 // The desktop draws about 7.9 px per cell column, and a little under is used so the picture never overflows the pane.
 export const CELL_PX = 7.5
-
-// Rows of scroll that count as a new place; the picture is drawn again as of now when the scroll crosses into another
-// bucket, so a picture that is mounted fresh starts from where everyone is, while small scrolls leave it undisturbed.
-export const SCROLL_BUCKET = 24
-
-// The probes showed the panel is not remounted while it is scrolled near the top, so the picture is left alone there.
-// Only a scroll far enough to take it out of view changes the key (once out, once back), in case the app unmounts it.
-export const SCROLL_NEAR = 48
-export function scrollKey(offset: number): string {
-  return Number.isFinite(offset) && offset >= SCROLL_NEAR ? 'off' : '0'
-}
 
 // The size the picture takes in a pane of this many columns, keeping its shape.
 export function fitSize(size: { width: number; height: number } | undefined, columns: number): { width: number; height: number } | undefined {
@@ -490,47 +473,17 @@ export function svgSize(source: string): { width: number; height: number } | und
   return width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height) ? { width, height } : undefined
 }
 
-// The picture is drawn as of this far ahead of the clock, because it takes about this long to appear and start its
-// animations; drawn as of the clock, every redraw would put everyone back by that much.
+// Pictures are drawn as of this far ahead of the clock, about when they appear. Each picture is shown late by the
+// desktop's delay less this, and so was the one before it, so the value moves no one: what moves a walker at a redraw
+// is how much that delay changes from one picture to the next.
 export const LEAD_MS = 250
 
-// What the picture shows, without the time. Events that change none of it (an agent doing the same thing again) leave
-// it alone, so the desktop is not asked to draw the picture again.
-function agentFacts(id: string, a: Agent): unknown[] {
-  return [
-    id, a.label, a.type, a.phase, a.station, a.slot, a.desk, a.pos.x, a.pos.y, a.isTeammate, a.isBackground,
-    a.parentId, a.activity?.tool ?? null, a.activity?.target ?? null, a.walk?.startedAt ?? null,
-    a.walk?.durationMs ?? null, a.carry?.item ?? null, a.carry?.until ?? null, a.lastErrorAt, a.goneAt, a.outcome,
-  ]
-}
-
-export function pictureSignature(scene: Scene): string {
-  const agents: unknown[] = []
-  for (const id of scene.order) {
-    const a = scene.agents[id]
-    if (a === undefined) continue
-    agents.push(agentFacts(id, a))
-  }
-  return JSON.stringify([agents, scene.briefing, scene.todos === null ? null : [scene.todos.done, scene.todos.open]])
-}
-
-// The picture the pane shows. A picture whose source changes is drawn again by the desktop, which restarts every
-// walk in it and can resize it under the person's scroll, so the source only changes when something visible did: it
-// is drawn once, as of a moment ahead of now, and the same text comes back until the next change. Walks and blinking
-// play on inside it meanwhile.
-let drawn: { key: string; source: string } | null = null
-
-// `interaction` names what the person has just done in the panel (which row is open, whether the legend is shown):
-// the desktop may draw the picture again when the panel changes, which restarts every animation in it from the
-// moment it was drawn, so a click draws it again as of now and a restart carries on from where everyone really is.
-export function officeSource(scene: Scene, now: number, interaction = ''): string {
-  const key = `${pictureSignature(scene)}:${isNight(now)}:${interaction}`
-  if (drawn === null || drawn.key !== key) drawn = { key, source: renderOffice(scene, now + LEAD_MS) }
-  return drawn.source
-}
-
-export function forgetOffice(): void {
-  drawn = null
+// The picture the pane shows, drawn as of the moment it will appear. The desktop starts a picture's animations over
+// whenever the pane is drawn, even when the picture is the very same text: in a recording, a walker went back to the
+// first step of its walk at every draw while nothing about it had changed. A picture kept from an earlier draw would
+// replay what happened then, so each draw is fresh, and a restart carries on from where everyone is.
+export function officeSource(scene: Scene, now: number): string {
+  return renderOffice(scene, now + LEAD_MS)
 }
 
 const ROOT =
@@ -543,117 +496,25 @@ function rankedAgents(scene: Scene, now: number): Agent[] {
     .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt))
 }
 
-// The picture as layers: the scenery is one picture and each agent is its own transparent one stacked over it. The
-// desktop draws a picture again when its source changes, and that restarts every walk inside that picture, so one
-// agent's event must only change that agent's own picture. A layer whose signature is unchanged returns the very same
-// text, which is what keeps the desktop from drawing it again.
+// The picture as layers: the scenery, the cat and each agent as its own transparent picture stacked over it. The
+// desktop starts every picture over whenever the pane is drawn, so each is drawn afresh as of then, as the single
+// picture is; stacking them keeps no agent's walk apart from another's on today's desktop.
 export const MAX_LAYERS = 24
 export type Layer = { key: string; source: string }
 
-export function agentSignature(scene: Scene, a: Agent, lane: number, isBelow: boolean, at = 0): string {
-  return JSON.stringify([
-    ...agentFacts(a.id, a), lane, isBelow, waitingOn(scene, a.id).map(h => h.label), Math.round(etaOf(scene, a, at)?.typicalMs ?? 0),
-  ])
-}
-
-// What a walk is made of and nothing else: the agent's bubble, lane, tag side, ETA bar and activity are left out.
-export function walkSignature(a: Agent, scroll: string): string {
-  return `${JSON.stringify([
-    a.id, a.label, a.type, a.isTeammate, a.isBackground, a.station, a.slot, a.walk?.startedAt ?? null,
-    a.walk?.durationMs ?? null, a.phase === 'gone', a.goneAt, a.carry?.item ?? null, a.carry?.until ?? null,
-  ])}:${scroll}`
-}
-
-export function baseSignature(scene: Scene, extra = 0): string {
-  const agents = scene.order.flatMap(id => {
-    const a = scene.agents[id]
-    return a === undefined
-      ? []
-      : [[id, a.station, a.slot, a.activity !== null, a.activity?.tool === 'Write', a.phase === 'waiting', a.phase === 'gone', a.arrivedAt, a.goneAt]]
-  })
-  return JSON.stringify([scene.briefing, scene.todos === null ? null : [scene.todos.done, scene.todos.open], agents, extra])
-}
-
-let baseDrawn: { key: string; source: string; sig: string; night: boolean } | null = null
-// `parts` is kept only while a debug trace is listening: what the key was made of, to say what changed.
-type DrawnParts = { state: string; lane: number; below: boolean; scroll: string; walking: boolean }
-const agentDrawn = new Map<string, { key: string; source: string; parts?: DrawnParts }>()
-// The cat is drawn once and the same text is returned forever: its loop starts from the clock at the first draw and
-// repeats, so the same text stays right, and no redraw of anything else restarts it.
-let petDrawn: Layer | null = null
-
-export function forgetLayers(): void {
-  baseDrawn = null
-  petDrawn = null
-  agentDrawn.clear()
-}
-
-export function officeLayers(
-  scene: Scene,
-  now: number,
-  scroll = '0',
-  trace?: (e: Record<string, unknown>) => void,
-): { base: Layer; pet: Layer; agents: Layer[] } {
+export function officeLayers(scene: Scene, now: number): { base: Layer; pet: Layer; agents: Layer[] } {
   const at = now + LEAD_MS
   const visible = rankedAgents(scene, at)
   const ids = new Set(visible.slice(0, MAX_LAYERS).map(a => a.id))
   const drawn = scene.order.filter(id => ids.has(id)).flatMap(id => (scene.agents[id] === undefined ? [] : [scene.agents[id]!]))
   const extra = visible.length - drawn.length
-  // Decided from where each agent is going, not where it is this instant, so a walk never changes the answers.
-  const below = tagsBelow(drawn, at, a => a.pos)
-  const lanes = bubbleLanes(drawn, scene, at, a => a.pos)
-
-  const baseSig = baseSignature(scene, extra)
-  const baseKey = `${baseSig}:${isNight(now)}`
-  if (baseDrawn === null || baseDrawn.key !== baseKey) {
-    if (trace !== undefined) {
-      const why = baseDrawn === null ? ['first'] : [...(baseDrawn.sig !== baseSig ? ['signature'] : []), ...(baseDrawn.night !== isNight(now) ? ['night'] : [])]
-      trace({ layer: 'base', why })
-    }
-    const source = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}${officeDecor()}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>`
-    baseDrawn = { key: baseKey, source, sig: baseSig, night: isNight(now) }
+  const below = tagsBelow(drawn, at)
+  const lanes = bubbleLanes(drawn, scene, at)
+  return {
+    base: { key: 'base', source: `${ROOT}${OFFICE_DEFS}${officeBase(isNight(at))}${officeDecor()}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>` },
+    pet: { key: 'pet', source: `${ROOT}${petSvg(at)}</svg>` },
+    agents: drawn.map(a => ({ key: `agent-${a.id}`, source: `${ROOT}${drawAgent(a, scene, at, below.has(a.id), lanes.get(a.id) ?? 0)}</svg>` })),
   }
-
-  if (petDrawn === null) petDrawn = { key: 'pet', source: `${ROOT}${petSvg(at)}</svg>` }
-
-  const agents = drawn.map(a => {
-    const lane = lanes.get(a.id) ?? 0
-    const isBelow = below.has(a.id)
-    const isWalking = isWalkingAt(a, at)
-    // A redraw restarts the walk, and any error in how far ahead it is drawn shows as a jump, so a walker is left alone
-    // from the moment its walk starts until it arrives; a walk that starts anew (a new walk.startedAt) is drawn afresh.
-    // Once it has arrived the key is the full signature, so the agent is drawn once more, standing, as it is by then.
-    const key = isWalking ? walkSignature(a, scroll) : agentSignature(scene, a, lane, isBelow, at)
-    let layer = agentDrawn.get(a.id)
-    if (layer === undefined || layer.key !== key) {
-      let parts: DrawnParts | undefined
-      if (trace !== undefined) {
-        const state = isWalking
-          ? walkSignature(a, '')
-          : JSON.stringify([...agentFacts(a.id, a), waitingOn(scene, a.id).map(h => h.label), Math.round(etaOf(scene, a, at)?.typicalMs ?? 0)])
-        parts = { state, lane, below: isBelow, scroll: isWalking ? scroll : '', walking: isWalking }
-        const prev = layer?.parts
-        const why: string[] = []
-        if (layer === undefined) why.push('first')
-        else if (prev === undefined) why.push('unknown')
-        else if (isWalking) {
-          if (!prev.walking || prev.state !== parts.state) why.push('walk')
-          else if (prev.scroll !== parts.scroll) why.push('scroll')
-        } else {
-          if (prev.state !== parts.state) why.push('state')
-          if (prev.lane !== lane) why.push('lane')
-          if (prev.below !== isBelow) why.push('below')
-          if (prev.scroll !== parts.scroll && prev.scroll !== '' && parts.scroll !== '') why.push('scroll')
-        }
-        trace({ layer: 'agent', id: a.id, why, walking: isWalking, lane, isBelow, scroll })
-      }
-      layer = { key, source: `${ROOT}${drawAgent(a, scene, at, isBelow, lane)}</svg>`, parts }
-      agentDrawn.set(a.id, layer)
-    }
-    return { key: `agent-${a.id}`, source: layer.source }
-  })
-  for (const id of Array.from(agentDrawn.keys())) if (!ids.has(id)) agentDrawn.delete(id)
-  return { base: { key: 'base', source: baseDrawn.source }, pet: petDrawn, agents }
 }
 
 export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {

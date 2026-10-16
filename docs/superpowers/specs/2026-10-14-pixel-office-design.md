@@ -422,6 +422,23 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
   as an agent's layer is, and reports the room that box gets, so one run tells a layer with no room from a layer
   that has room and still shows nothing.
 
+## 0.5.2: every render draws the picture afresh
+
+- **What a recording showed.** With the layered picture, a helper went back to the first step of its walk again and
+  again: at 2.35, 2.55, 3.95, 4.31 and 4.72 s it stood where it had started from at 1.91 s, and walked on from there.
+  Its bubble did not change, so no new walk began, and the layers drew its picture once per walk: the text of its
+  picture was the same each time. The desktop starts a picture's animations over whenever it draws the pane, not only
+  when the picture's text changes. Every earlier fix kept the same text to spare the picture a restart (the cache of
+  0.4.x, the redraw on a click in #13 and on a scroll in #16, the layers of #19 to #24), so each restart replayed a
+  moment already past: the walker went back and walked the same stretch again.
+- **The fix.** `officeSource` and `officeLayers` draw every picture as of the render, `LEAD_MS` ahead, at every
+  render. A restart then carries on from where everyone is. What is left is how much the desktop's delay changes
+  from one picture to the next.
+- **Layered.** Stacking pictures cannot keep one agent's walk apart from another's restarts on this desktop. The
+  layers draw afresh like the single picture, and stay only as an experiment. The recording showed their agents, so
+  the layer probe of 0.5.1 is gone: it reported one row while the agents' pictures showed, so its rows said nothing
+  about the room a layer gets.
+
 ## Out of scope
 
 - Other sessions on the machine (a "building" view).

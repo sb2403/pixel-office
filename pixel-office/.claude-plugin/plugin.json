@@ -1,6 +1,6 @@
 {
   "name": "pixel-office",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A live pixel-art office showing what every agent in the session is doing",
   "author": { "name": "Spencer Barrett" },
   "license": "MIT",
@@ -32,14 +32,14 @@
     "picture": {
       "type": "string",
       "title": "Office picture",
-      "description": "single: one picture for everybody (the default); layered: each agent is its own picture stacked over the scenery, so one agent moving never restarts another one walking. Layered is experimental: in some panes the agents do not show, and then use single",
+      "description": "single: one picture for everybody, drawn afresh each time the pane is drawn (the default); layered: the scenery, the cat and each agent as separate pictures stacked over each other. Layered is experimental: the app starts every picture over whenever it draws the pane, so it offers nothing over single",
       "default": "single",
       "options": ["layered", "single"]
     },
     "debug": {
       "type": "string",
       "title": "Debug log",
-      "description": "on: write a log of draws, events and what the pane reports to pixel-office/debug/log.jsonl (no commands, file names or text are logged, only event kinds, agent ids and timings); off: nothing",
+      "description": "on: write a log of renders, events and what the pane reports to pixel-office/debug/log.jsonl (no commands, file names or text are logged, only event kinds, agent ids and timings); off: nothing",
       "default": "off",
       "options": ["off", "on"]
     }
