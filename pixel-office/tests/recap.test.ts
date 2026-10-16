@@ -10,6 +10,8 @@ import {
   recapRows,
   recapSummary,
   recapSvg,
+  sessionLines,
+  sessionTotals,
   span,
   speedUp,
   withRecord,
@@ -129,7 +131,32 @@ describe('recapOf', () => {
     expect(recap.isOpen).toBe(true)
     expect(recap.lanes.every(l => l.end === s(45) && l.isOpen)).toBe(true)
     expect(recapSummary(recap)[1]).toBe('Running for 45s · 1 helper, up to 1 at once')
-    expect(recapRows(recap)).toEqual(['Main: 45s, still working', '  Researcher: 35s, still working'])
+    expect(recapRows(recap)).toEqual([
+      'Main: 45s, running, tokens counted when it finishes',
+      '  Researcher: 35s, running, tokens counted when it finishes',
+    ])
+  })
+
+  test('an open lane that already has tokens (a called-back helper) keeps the usual wording', async () => {
+    const scene = run([turn(0), hire('a1', 10), back('a1', 20, used(3000)), hire('a1', 30, { isResume: true })])
+    const rows = recapRows(recapOf(scene, s(45))!)
+    expect(rows[1]).toBe('  Researcher: 15s, 3k tokens, still working')
+  })
+
+  test('tokens split into Main and helpers, and the total is their sum', async () => {
+    const scene = run([turn(0), hire('a1', 10), hire('a2', 20), back('a1', 50, used(30_000)), back('a2', 55, used(50_000)), turnEnd(60, used(40_000))])
+    const recap = recapOf(scene, s(70))!
+    expect(recap.mainTokens).toBe(40_000)
+    expect(recap.helperTokens).toBe(80_000)
+    expect(recap.tokens).toBe(120_000)
+    expect(recapSummary(recap)[1]).toBe('Took 1m 0s · 2 helpers, up to 2 at once · 120k tokens (Main 40k, helpers 80k)')
+    expect(jobRecord(recap)).toMatchObject({ mainTokens: 40_000, helperTokens: 80_000, mainEdits: 0 })
+    const bare = recapOf(run([turn(0), hire('a1', 10), back('a1', 50), turnEnd(60)]), s(70))!
+    expect([bare.mainTokens, bare.helperTokens, bare.tokens]).toEqual([null, null, null])
+    expect(recapSummary(bare)[1]).toBe('Took 1m 0s · 1 helper, up to 1 at once')
+    const onlyHelpers = recapOf(run([turn(0), hire('a1', 10), back('a1', 50, used(80_000)), turnEnd(60)]), s(70))!
+    expect([onlyHelpers.mainTokens, onlyHelpers.helperTokens]).toEqual([null, 80_000])
+    expect(recapSummary(onlyHelpers)[1]).toBe('Took 1m 0s · 1 helper, up to 1 at once · 80k tokens (helpers 80k)')
   })
 
   test('a new message starts a new job; a turn that carries on keeps the same one', async () => {
@@ -200,6 +227,23 @@ describe('recapSvg', () => {
     expect(svg).toContain('@media (prefers-color-scheme: dark)')
   })
 
+  test('a token column shows each agent\'s share of the job, or why there is none', async () => {
+    const counted = recapSvg(recapOf(run([turn(0), hire('a1', 10), hire('a2', 15), back('a1', 60, used(20_000)), back('a2', 70, used(80_000)), turnEnd(90)]), s(100))!)
+    expect(counted).toContain('>Tokens</text>')
+    expect(counted).toContain('>20k · 20%</text>')
+    expect(counted).toContain('>80k · 80%</text>')
+    // Main finished with nothing counted.
+    expect(counted).toContain('>—</text>')
+    expect(counted).toMatch(/class="t" x="[\d.]+" y="[\d.]+" width="8.8" height="4"/)
+    expect(counted).toMatch(/class="t" x="[\d.]+" y="[\d.]+" width="35.2" height="4"/)
+    expect(counted).toMatch(/^<svg[^>]* width="758"/)
+    expect(counted).toContain('.t{fill:#7d7a72}')
+    const open = recapSvg(recapOf(run([turn(0), hire('a1', 10)]), s(45))!)
+    expect(open.match(/>running<\/text>/g)).toHaveLength(2)
+    expect(open).not.toContain('class="t" x=')
+    expect(svg).toContain('>—</text>')
+  })
+
   test('every bar starts and ends inside the plot', async () => {
     const bars = [...svg.matchAll(/class="k-\w+" x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="10" rx="4"/g)]
     expect(bars).toHaveLength(3)
@@ -229,6 +273,40 @@ describe('history', () => {
     expect(isRecord(record(1))).toBe(true)
     expect(isRecord({ ...record(1), tokens: 5 })).toBe(true)
     for (const bad of [null, 3, 'x', {}, { ...record(1), task: 7 }, { ...record(1), tokens: '5' }]) expect(isRecord(bad)).toBe(false)
+  })
+
+  test('a record saved before the token split still reads, and a malformed split does not', async () => {
+    expect(isRecord(record(1))).toBe(true)
+    expect(isRecord({ ...record(1), mainTokens: 5, helperTokens: null, mainEdits: 2 })).toBe(true)
+    expect(isRecord({ ...record(1), mainTokens: '5' })).toBe(false)
+    expect(isRecord({ ...record(1), helperTokens: '5' })).toBe(false)
+    expect(isRecord({ ...record(1), mainEdits: '2' })).toBe(false)
+  })
+
+  test('the session total adds up the jobs, the open one included once', async () => {
+    const a: JobRecord = { startedAt: s(0), task: 'a', tookMs: 120_000, helpers: 1, peak: 1, tokens: 30_000, mainTokens: 10_000, helperTokens: 20_000, mainEdits: 1 }
+    const b: JobRecord = { startedAt: s(500), task: 'b', tookMs: 180_000, helpers: 2, peak: 2, tokens: 90_000, mainTokens: 30_000, helperTokens: 60_000, mainEdits: 2 }
+    const open = recapOf(run([turn(1000), hire('a1', 1010), back('a1', 1060, used(5000)), turnEnd(1100, used(1000))]), s(1200))!
+    expect(sessionTotals([a, b], null)).toEqual({ jobs: 2, helpers: 3, workMs: 300_000, tokens: 120_000, mainTokens: 40_000, helperTokens: 80_000, mainEdits: 3 })
+    expect(sessionTotals([a, b], open)).toEqual({ jobs: 3, helpers: 4, workMs: 400_000, tokens: 126_000, mainTokens: 41_000, helperTokens: 85_000, mainEdits: 3 })
+    // The same job saved earlier is replaced by the open one, not counted twice.
+    const stale = { ...b, startedAt: s(1000) }
+    expect(sessionTotals([a, stale], open)).toEqual({ jobs: 2, helpers: 2, workMs: 220_000, tokens: 36_000, mainTokens: 11_000, helperTokens: 25_000, mainEdits: 1 })
+    // Not capped at the history's 20.
+    const many = Array.from({ length: 30 }, (_, i) => record(i))
+    expect(sessionTotals(many, null).jobs).toBe(30)
+    expect(sessionTotals([record(1), record(2)], null)).toMatchObject({ tokens: null, mainTokens: null, helperTokens: null })
+    expect(sessionTotals([], null)).toMatchObject({ jobs: 0, tokens: null })
+  })
+
+  test('the session line reads in one line', async () => {
+    const totals = { jobs: 2, helpers: 3, workMs: 300_000, tokens: 120_000, mainTokens: 40_000, helperTokens: 80_000, mainEdits: 0 }
+    expect(sessionLines(totals)).toEqual(['This session: 2 jobs · 3 helpers · 5m 0s · 120k tokens (Main 40k, helpers 80k)'])
+    expect(sessionLines({ ...totals, jobs: 1, helpers: 1, workMs: 45_000 })).toEqual(['This session: 1 job · 1 helper · 45s · 120k tokens (Main 40k, helpers 80k)'])
+    expect(sessionLines({ ...totals, helpers: 0 })[0]).toContain('2 jobs · no helpers · 5m 0s')
+    expect(sessionLines({ ...totals, tokens: null, mainTokens: null, helperTokens: null })).toEqual(['This session: 2 jobs · 3 helpers · 5m 0s'])
+    expect(sessionLines({ ...totals, mainTokens: null })[0]).toEndWith('120k tokens (helpers 80k)')
+    expect(sessionLines({ ...totals, helperTokens: null })[0]).toEndWith('120k tokens (Main 40k)')
   })
 
   test('a record reads as a line', async () => {
