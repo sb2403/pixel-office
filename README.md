@@ -75,7 +75,7 @@ The numbers below match the numbers in the picture.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 6. **Show this job.** A button that opens the recap of the job in front of you: see below.
 
-The office picture is drawn as one picture by default. There is an experimental layered mode, where the scenery is one picture and each agent is its own transparent picture stacked on top of it, so one agent doing something would never restart another agent's walk. It did not show the agents in the author's pane, so use it only to experiment; set the `picture` option to `layered` to try it (see Commands and options).
+The office picture is drawn as one picture by default. There is an experimental layered mode, where the scenery is one picture and each agent is its own transparent picture stacked on top of it, so one agent doing something would never restart another agent's walk. A walker is left alone from the moment its walk starts until it arrives, and the cat is its own picture so nothing else restarts it. It did not show the agents in the author's pane, so use it only to experiment; set the `picture` option to `layered` to try it (see Commands and options).
 
 ## The office cat
 

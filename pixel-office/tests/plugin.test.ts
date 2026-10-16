@@ -163,12 +163,13 @@ test('with the layered picture, the scenery and each agent are their own picture
   await clock.advance(FLUSH)
   const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
   const pictures = await ui.findAll({ type: 'Svg' })
-  // The scenery, then one transparent picture each for Main and the helper.
-  expect(pictures).toHaveLength(3)
+  // The scenery, the cat, then one transparent picture each for Main and the helper.
+  expect(pictures).toHaveLength(4)
   expect(String(pictures[0]?.props.source)).not.toContain('<g id="agent-')
-  expect(String(pictures[2]?.props.source)).toContain('id="agent-agent-1"')
+  expect(String(pictures[1]?.props.source)).toContain('id="po-pet"')
+  expect(String(pictures[3]?.props.source)).toContain('id="agent-agent-1"')
   const layerBoxes = (await ui.findAll({ type: 'Box' })).filter(box => box.props.position === 'absolute')
-  expect(layerBoxes).toHaveLength(2)
+  expect(layerBoxes).toHaveLength(3)
   for (const box of layerBoxes) {
     expect(box.props.width).toBe('100%')
     expect(box.props.height).toBe('100%')

@@ -118,6 +118,9 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
         ) : (
           <Box key="office" position="relative">
             <Svg key="office-base" source={layers.base.source} alt={altText(scene)} {...size} />
+            <Box key={layers.pet.key} position="absolute" top={0} left={0} width="100%" height="100%">
+              <Svg key={layers.pet.key + '-svg'} source={layers.pet.source} alt="The office cat" {...size} />
+            </Box>
             {layers.agents.map(layer => (
               // An absolute Box has no size unless it is given one, so each layer is given the parent's whole region.
               <Box key={layer.key} position="absolute" top={0} left={0} width="100%" height="100%">

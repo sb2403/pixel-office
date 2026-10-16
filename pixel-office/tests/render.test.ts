@@ -475,8 +475,8 @@ test('the picture is sized from the pane columns, keeping its shape', async () =
 })
 
 describe('scrollKey', () => {
-  test('near places are told apart in steps of 6, anything far is one place', () => {
-    expect([0, 5, 6, 47, 48, 500, -3, NaN].map(scrollKey)).toEqual(['0', '0', '1', '7', 'off', 'off', '0', '0'])
+  test('anything near the top is one place, anything far is another', () => {
+    expect([0, 5, 6, 30, 47, 48, 500, -3, NaN].map(scrollKey)).toEqual(['0', '0', '0', '0', '0', 'off', 'off', '0', '0'])
   })
 })
 
@@ -485,9 +485,10 @@ describe('officeLayers', () => {
 
   test('the scenery is one picture and each agent is its own transparent one', () => {
     forgetLayers()
-    const { base, agents } = officeLayers(team(), 9000)
+    const { base, pet, agents } = officeLayers(team(), 9000)
     expect(base.source).not.toContain('<g id="agent-')
-    expect(base.source).toContain('id="po-pet"')
+    expect(base.source).not.toContain('id="po-pet"')
+    expect(pet.source).toContain('id="po-pet"')
     expect(agents.map(l => l.key)).toEqual(['agent-main', 'agent-a', 'agent-b'])
     for (const layer of agents) {
       const id = layer.key.slice('agent-'.length)
@@ -498,7 +499,7 @@ describe('officeLayers', () => {
       expect(layer.source).toEndWith('</svg>')
     }
     expect(base.source).toContain('po-wood')
-    for (const layer of [base, ...agents]) expect(layer.source).toContain('width="960" height="600"')
+    for (const layer of [base, pet, ...agents]) expect(layer.source).toContain('width="960" height="600"')
   })
 
   test('an event of one agent changes only its own picture', () => {
@@ -528,7 +529,7 @@ describe('officeLayers', () => {
     const walk = s.agents.a1!.walk!
     const now = walk.startedAt + 100
     const near = officeLayers(s, now, scrollKey(0))
-    const small = officeLayers(s, now + 100, scrollKey(5))
+    const small = officeLayers(s, now + 100, scrollKey(30))
     const away = officeLayers(s, now + 200, scrollKey(60))
     const back = officeLayers(s, now + 300, scrollKey(0))
     expect(small.agents[1]!.source).toBe(near.agents[1]!.source)
@@ -540,6 +541,39 @@ describe('officeLayers', () => {
     const key0 = officeLayers(rested, t, scrollKey(0)).agents.map(l => l.source)
     expect(officeLayers(rested, t, scrollKey(60)).agents.map(l => l.source)).toEqual(key0)
     expect(officeLayers(rested, t, scrollKey(5)).agents.map(l => l.source)).toEqual(key0)
+  })
+
+  test('a walker is not redrawn by other agents, only when its walk ends, and then once', () => {
+    forgetLayers()
+    const s1 = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    const walk = s1.agents.a1!.walk!
+    const T = walk.startedAt + 100
+    const ends = walk.startedAt + walk.durationMs
+    const a1 = (l: { agents: { key: string; source: string }[] }) => l.agents.find(x => x.key === 'agent-a1')!.source
+    const first = officeLayers(s1, T)
+    const s2 = reduce(reduce(s1, spawnEv('b', T - 20)), readEv('b', 'auth.ts', T - 10))
+    expect(s2.agents.a1!.walk).toEqual(walk)
+    const mid = officeLayers(s2, T + 200)
+    expect(mid.agents.map(l => l.key)).toContain('agent-b')
+    expect(a1(mid)).toBe(a1(first))
+    // The agent's own activity changing during the walk does not start a new walk or redraw it.
+    const s3 = reduce(s2, { kind: 'toolStarted', agentId: 'a1', tool: 'Grep', target: 'other.ts', detail: '', callId: 'c2', at: T + 250 })
+    if (s3.agents.a1!.walk?.startedAt === walk.startedAt) expect(a1(officeLayers(s3, T + 300))).toBe(a1(first))
+    const after = officeLayers(s3, ends + 1000)
+    expect(a1(after)).not.toBe(a1(first))
+    expect(a1(officeLayers(s3, ends + 2000))).toBe(a1(after))
+  })
+
+  test('the cat is its own picture, drawn once, and the single picture still has it', () => {
+    forgetLayers()
+    const s = team()
+    const first = officeLayers(s, 9000)
+    const later = officeLayers(reduce(s, readEv('b', 'y.ts', 40000)), 41000)
+    expect(first.pet.source).toContain('id="po-pet"')
+    expect(first.base.source).not.toContain('id="po-pet"')
+    expect(later.pet.source).toBe(first.pet.source)
+    expect(later.pet.key).toBe('pet')
+    expect(renderOffice(s, 9000)).toContain('id="po-pet"')
   })
 
   test('the layout does not depend on the time while agents walk', () => {
@@ -596,7 +630,7 @@ describe('officeLayers', () => {
     const trace = (e: Record<string, unknown>): void => void heard.push(e)
     officeLayers(idle, 30000, '0', trace)
     heard.length = 0
-    officeLayers(reduce(idle, readEv('b', 'y.ts', 30500)), 31000, '0', trace)
+    officeLayers(reduce(idle, readEv('b', 'y.ts', 30500)), 45000, '0', trace)
     const b = heard.find(e => e.layer === 'agent' && e.id === 'b')
     expect(b?.why).toContain('state')
     expect(heard.find(e => e.layer === 'agent' && e.id === 'a')?.why).not.toContain('state')
