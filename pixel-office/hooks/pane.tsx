@@ -4,8 +4,8 @@ import type { On } from 'claude-code'
 import type { JobRecord, PeerSession } from '../types'
 import { note } from './debuglog'
 import { emptyScene, restore } from './model'
-import { PEERS_SHOWN, peerRows, peersHeading } from './peers'
-import { STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
+import { PEERS_SHOWN, officeOf, peerKey, peerRows, peersHeading } from './peers'
+import { LEAD_MS, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, renderOffice, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
 import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -20,6 +20,8 @@ const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, fa
 const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
 const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, [] as JobRecord[])
 const othersAtom = atom({ plugin: 'pixel-office', key: 'others' } as const, [] as PeerSession[])
+const lookingAtom = atom({ plugin: 'pixel-office', key: 'looking' } as const, null as string | null)
+const lookedAtom = atom({ plugin: 'pixel-office', key: 'looked' } as const, null as PeerSession | null)
 const LINK = '#378add'
 // The details lines a whole text belongs under.
 const PARTS = [
@@ -45,10 +47,19 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
     const hidden = rows.length - shown.length
     const details = selected === null ? [] : agentDetails(scene, selected, now)
     const recap = recapOf(scene, now)
-    // The other sessions on this computer: plain rows, as a row cannot take you to that session.
+    // The other sessions on this computer. A row cannot take you to that session, but pressing it shows that
+    // session's office in the picture, until it is pressed again or Back is.
     const others = await read($, othersAtom)
     const peers = peerRows(others.slice(0, PEERS_SHOWN), now)
     const peersHidden = others.length - peers.length
+    const looking = await read($, lookingAtom)
+    const lookedAt = await read($, lookedAtom)
+    const looked = looking !== null && lookedAt !== null && peerKey(lookedAt) === looking ? lookedAt : null
+    const lookIn = async (key: string): Promise<void> => {
+      const next = looking === key ? null : key
+      await update($, lookingAtom, () => next)
+      await update($, lookedAtom, () => (next === null ? null : (others.find(p => peerKey(p) === next) ?? null)))
+    }
 
     if (e.surface === 'terminal') {
       const { Box, Text } = $.ui.resolve(e)
@@ -105,13 +116,28 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
     }
     // Drawn afresh at every render, as of now: the desktop starts the picture over whenever it draws the pane, even
     // when its text is unchanged, so a picture kept from an earlier render would replay that moment.
-    const officePicture = officeSource(scene, now)
+    // Another session's office is drawn by the same code from what its snapshot says: one picture, either way.
+    const lookedScene = looked === null ? null : officeOf(looked, now + LEAD_MS)
+    const officePicture = lookedScene === null ? officeSource(scene, now) : renderOffice(lookedScene, now + LEAD_MS)
+    const lookedName = looked === null ? '' : peerRows([looked], now)[0]?.line ?? ''
     const size = fitSize(svgSize(officePicture), e.props.bodyColumns)
     const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
       <Box flexDirection="column" gap={1}>
         {isDebug === true && <Client key={PROBE_TOP} module="./probe.tsx" props={{ where: 'top' }} />}
-        <Svg source={officePicture} alt={altText(scene)} {...size} />
+        {looked !== null && (
+          <Box key="looking" flexDirection="row" gap={2}>
+            <Text bold color={STATUS_COLOR[looked.status]} wrap="truncate-end">
+              Looking in on {lookedName}
+            </Text>
+            <Button key="back" label="Back to your office" onPress={() => lookIn(peerKey(looked))} />
+          </Box>
+        )}
+        <Svg
+          source={officePicture}
+          alt={lookedScene === null ? altText(scene) : `Another session's office. ${altText(lookedScene)}`}
+          {...size}
+        />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>
@@ -179,11 +205,15 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
         {others.length > 0 && (
           <Box key="peers" flexDirection="column">
             <Text bold>{peersHeading(others)}</Text>
+            <Text dimColor>Press one to look in on its office.</Text>
             {peers.map(row => (
               <Box key={`peer-${row.key}`} flexDirection="column">
-                <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'idle'} wrap="truncate-end">
-                  {row.line}
-                </Text>
+                <Button key={`look-${row.key}`} plain onPress={() => lookIn(row.key)}>
+                  <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'idle'} bold={row.key === looking} wrap="truncate-end">
+                    {row.key === looking ? '▸ ' : ''}
+                    {row.line}
+                  </Text>
+                </Button>
                 {row.job !== '' && (
                   <Text dimColor wrap="truncate-end">
                     {row.job}

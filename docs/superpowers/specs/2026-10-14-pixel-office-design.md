@@ -472,6 +472,30 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
 - **Kept out.** Transcript files under `~/.claude/projects` (an undocumented format), `$.store` (one file, no lock), and
   any network.
 
+## 0.8.0: looking in on another session's office
+
+- **Why not a bigger office.** With many sessions the office could grow (a room per session, a building of floors),
+  but one picture of 240 × 150 would give each of 32 sessions a room about 30 × 37 (room for a person or two, not
+  eleven stations), every other session's beat would
+  redraw the pane and restart this session's walks (0.5.2), and a picture of windows cannot be pressed (it is shown
+  as an image) nor name a project at pane widths. So the office grows in depth: one office at a time, any of them.
+- **What.** Pressing a row under Your other sessions swaps the picture for that session's office, drawn by the same
+  `renderOffice` from its snapshot, under "Looking in on api-server · working" and a **Back to your office** button.
+  Pressing the row again, Back, or the session ending (the poll finds it gone) brings this office back. The feed and
+  the team stay this session's.
+- **Snapshot.** `agents`: up to `PEER_AGENTS_MAX` (20) of the session's agents, Main first then the latest to act,
+  each `{ id, boss, type, label, phase, station, slot, x, y, look, isBusy, isTeammate, isBackground }`, about 250
+  bytes each (5 KB for 20, under the 8 KB file limit). Ids are renumbered (`main`, `a1`…); `type` is a built-in kind
+  or `helper`; `label` is the office's role words or the role's title, so no name a person or Claude chose leaves;
+  `x`, `y` are where the agent is headed. Still schema 1: a copy without the field is read as an office with nobody
+  in it. A reader drops the whole list if any agent is off (unknown kind, station or phase, a position off the floor,
+  a colour that is not `#rrggbb`, a repeated id) and cleans each label as other text.
+- **Drawing.** `officeOf` makes a `Scene` with no walks, no ticker, no job and an activity with an empty tool for a
+  busy agent, so bubbles carry only the station's sign and the furniture in use still lights up.
+- **Timing.** The `looked` atom is written by the poll as soon as the looked-in office changes, without the list's
+  10 s calm: while it is on show this session's walks are not, so its redraws restart nothing being watched. The
+  snapshot now changes whenever an agent moves, so a busy session writes its file at most every 2 s, as before.
+
 ## Out of scope
 
 - Other people's sessions, and sessions on other machines (needs a relay; see 0.7.0).

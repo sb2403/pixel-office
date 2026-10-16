@@ -16,7 +16,9 @@ import {
   freeSlots,
   isTakenFrom,
   livePeers,
+  lookedOf,
   parsePeer,
+  peerKey,
   peerDirOf,
   peerStatusOf,
   shownOf,
@@ -62,6 +64,8 @@ const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, fa
 const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
 const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, [] as JobRecord[])
 const othersAtom = atom({ plugin: 'pixel-office', key: 'others' } as const, [] as PeerSession[])
+const lookingAtom = atom({ plugin: 'pixel-office', key: 'looking' } as const, null as string | null)
+const lookedAtom = atom({ plugin: 'pixel-office', key: 'looked' } as const, null as PeerSession | null)
 
 
 // A turn's token counts, summed over its requests (absent when nothing counted: an interrupt, an API error).
@@ -379,6 +383,21 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers, look
     peers.shown = shown
     peers.shownAt = now
     await update($, othersAtom, () => others)
+  }
+
+  // The office being looked in on is redrawn as soon as what it shows changes, without the list's calm window: while
+  // it is on show, this session's own walks are not, so its redraws restart nothing anyone is watching. A session
+  // that has gone takes the picture back to this office.
+  const looking = await read($, lookingAtom)
+  const shownNow = await read($, lookedAtom)
+  if (look !== peers.looks) return
+  const found = looking === null ? undefined : others.find(p => peerKey(p) === looking)
+  // A press between the read above and these writes wins: each write checks the pane still looks where it did.
+  if (looking !== null && found === undefined) {
+    await update($, lookingAtom, current => (current === looking ? null : current))
+    if ((await read($, lookingAtom)) === null) await update($, lookedAtom, () => null)
+  } else if (found !== undefined && (shownNow === null || lookedOf(found) !== lookedOf(shownNow))) {
+    if ((await read($, lookingAtom)) === looking) await update($, lookedAtom, () => found)
   }
 
   // With reminders on, another session waiting on you for a while is said once, as a toast only: that session
