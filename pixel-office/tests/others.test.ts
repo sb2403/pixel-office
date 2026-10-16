@@ -1,5 +1,6 @@
 import type { FsEntry, On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import { PEER_SCHEMA, POLL_MS, STALE_MS, parsePeer, slotName } from '../hooks/peers'
 import type { PeerSession } from '../types'
@@ -98,10 +99,10 @@ const other = (now: number, extra: Partial<PeerSession> = {}): string =>
     ...extra,
   } satisfies PeerSession)
 
-const start = ($: Parameters<Parameters<typeof test>[1]>[0]) =>
+const start = ($: Engine) =>
   $.session.start({ cwd: '/home/me/code/pixel-office', surface: 'desktop', isInteractive: true })
 
-const mount = ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'desktop' | 'terminal' = 'desktop') =>
+const mount = ($: Engine, surface: 'desktop' | 'terminal' = 'desktop') =>
   $.ui.mount({ plugin: 'pixel-office', surface, component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
 
 test('by default nothing is written to or read from the shared folder', async ($, on) => {
