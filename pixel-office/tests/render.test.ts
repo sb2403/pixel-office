@@ -12,15 +12,11 @@ import {
   clockLabel,
   escapeXml,
   fitSize,
-  forgetLayers,
   isNight,
   officeLayers,
   orgRows,
   renderOffice,
-  forgetOffice,
   officeSource,
-  pictureSignature,
-  scrollKey,
   sceneTimeOf,
   svgSize,
   tagsBelow,
@@ -139,9 +135,6 @@ describe('renderOffice', () => {
     expect(titles.some(t => t.includes('On the job'))).toBe(false)
     expect(titles.some(t => t.includes('Job: find auth code'))).toBe(true)
     expect(titles.some(t => t.includes('Brief:'))).toBe(false)
-    // Drawn through the pane's cache, an idle office is the same text a second later.
-    forgetOffice()
-    expect(officeSource(s, 67_000)).toBe(officeSource(s, 66_000))
   })
 
   test('a boss waiting on its helpers says who it is waiting on', async () => {
@@ -193,39 +186,19 @@ describe('renderOffice', () => {
     expect(tagsBelow([s.agents.a1!], 60_000).size).toBe(0)
   })
 
-  test('the picture is the same text until the scene changes, so the desktop never draws it again', async () => {
-    forgetOffice()
-    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
-    expect(sceneTimeOf(s)).toBe(1500)
-    // Walking is under way, yet a moment later, and a second after that, it is the very same picture.
-    const first = officeSource(s, 2000)
-    expect(officeSource(s, 2350)).toBe(first)
-    expect(officeSource(s, 3700)).toBe(first)
-    // Drawn as of the clock instead, it would be a new picture each time.
-    expect(renderOffice(s, 2350)).not.toBe(renderOffice(s, 3700))
-    // Another agent's event is a new picture, drawn as of now, so a walk in progress carries on from where it is.
-    const later = reduce(s, readEv('a1', 'login.ts', 4000))
-    const again = officeSource(later, 4100)
-    expect(again).not.toBe(first)
-    expect(again).toBe(renderOffice(later, 4100 + LEAD_MS))
-    expect(officeSource(later, 4600)).toBe(again)
-  })
-
-  test('an event that changes nothing in the picture does not draw it again, and one that does, does', async () => {
+  test('every draw is as of now, a little ahead, because the desktop starts the picture over at every render', async () => {
     expect(LEAD_MS).toBeGreaterThanOrEqual(100)
     expect(LEAD_MS).toBeLessThanOrEqual(500)
     const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
-    forgetOffice()
+    expect(sceneTimeOf(s)).toBe(1500)
+    // Nothing changed between the two draws, yet the second carries the walk on from where it has got to.
     const first = officeSource(s, 2000)
-    // The same read again changes nothing anyone can see.
-    const that = reduce(s, readEv('a1', 'auth.ts', 2600))
-    expect(officeSource(that, 3000)).toBe(first)
-    expect(pictureSignature(that)).toBe(pictureSignature(s))
-    // A different target is a different picture, drawn a little ahead of now.
-    const thatToo = reduce(that, readEv('a1', 'login.ts', 3500))
-    expect(pictureSignature(thatToo)).not.toBe(pictureSignature(s))
-    expect(officeSource(thatToo, 4000)).not.toBe(first)
-    expect(officeSource(thatToo, 4000)).toBe(renderOffice(thatToo, 4000 + LEAD_MS))
+    const second = officeSource(s, 2350)
+    expect(first).toBe(renderOffice(s, 2000 + LEAD_MS))
+    expect(second).toBe(renderOffice(s, 2350 + LEAD_MS))
+    expect(second).not.toBe(first)
+    const walk = s.agents.a1!.walk!
+    expect(groupOf(second, 'a1')).toContain(`<animateMotion dur="${walk.startedAt + walk.durationMs - (2350 + LEAD_MS)}ms"`)
   })
 
   test('a walk drawn before its first step plays from that step at its own pace', async () => {
@@ -266,28 +239,6 @@ describe('renderOffice', () => {
     const tops = [...svg.matchAll(/<g transform="translate\(-?[\d.]+,(-?[\d.]+)\)"><rect x="0" y="0" width="\d+" height="8"[^>]*\/>(?:(?!<g transform).)*?>a-long-file-name-\d\.ts</g)].map(m => Number(m[1]))
     expect(tops).toHaveLength(2)
     expect(Math.abs((tops[0] ?? 0) - (tops[1] ?? 0))).toBeGreaterThanOrEqual(10)
-  })
-
-  test('a click in the panel draws the picture again as of now, so a restart carries on from where everyone is', async () => {
-    forgetOffice()
-    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
-    const idle = officeSource(s, 2000, '|false|false|')
-    expect(officeSource(s, 5000, '|false|false|')).toBe(idle)
-    // Opening a row, the legend or the job view is a new picture, drawn at the time of the click.
-    const clicked = officeSource(s, 5000, 'a1|false|false|')
-    expect(clicked).not.toBe(idle)
-    expect(clicked).toBe(renderOffice(s, 5000 + LEAD_MS))
-    expect(officeSource(s, 9000, 'a1|false|false|')).toBe(clicked)
-  })
-
-  test('a scroll into another bucket draws the picture again as of now, a small one does not', async () => {
-    forgetOffice()
-    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
-    const first = officeSource(s, 2000, 'a1|false|false||0')
-    expect(officeSource(s, 5000, 'a1|false|false||0')).toBe(first)
-    const scrolled = officeSource(s, 7000, 'a1|false|false||1')
-    expect(scrolled).not.toBe(first)
-    expect(scrolled).toBe(renderOffice(s, 7000 + LEAD_MS))
   })
 
   test('night and day differ', async () => {
@@ -482,17 +433,10 @@ test('the picture is sized from the pane columns, keeping its shape', async () =
   expect(fitSize(size, NaN)).toBeUndefined()
 })
 
-describe('scrollKey', () => {
-  test('anything near the top is one place, anything far is another', () => {
-    expect([0, 5, 6, 30, 47, 48, 500, -3, NaN].map(scrollKey)).toEqual(['0', '0', '0', '0', '0', 'off', 'off', '0', '0'])
-  })
-})
-
 describe('officeLayers', () => {
   const team = (): Scene => run([spawnEv('a', 1000), spawnEv('b', 1001), readEv('b', 'x.ts', 1500)])
 
   test('the scenery is one picture and each agent is its own transparent one', () => {
-    forgetLayers()
     const { base, pet, agents } = officeLayers(team(), 9000)
     expect(base.source).not.toContain('<g id="agent-')
     expect(base.source).not.toContain('id="po-pet"')
@@ -510,18 +454,19 @@ describe('officeLayers', () => {
     for (const layer of [base, pet, ...agents]) expect(layer.source).toContain('width="960" height="600"')
   })
 
-  test('an event of one agent changes only its own picture', () => {
-    forgetLayers()
-    const before = officeLayers(team(), 9000)
-    const after = officeLayers(reduce(team(), readEv('b', 'y.ts', 11000)), 12000)
-    expect(after.agents[0]!.source).toBe(before.agents[0]!.source)
-    expect(after.agents[1]!.source).toBe(before.agents[1]!.source)
-    expect(after.agents[2]!.source).not.toBe(before.agents[2]!.source)
-    expect(after.base.source).toBe(before.base.source)
+  test('every layer is drawn as of now, a little ahead, at every call', () => {
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    const walk = s.agents.a1!.walk!
+    const T = walk.startedAt + 100
+    const a1 = (l: { agents: { key: string; source: string }[] }) => l.agents.find(x => x.key === 'agent-a1')!.source
+    const first = officeLayers(s, T)
+    const later = officeLayers(s, T + 300)
+    expect(a1(first)).toContain(`<animateMotion dur="${walk.startedAt + walk.durationMs - (T + LEAD_MS)}ms"`)
+    expect(a1(later)).toContain(`<animateMotion dur="${walk.startedAt + walk.durationMs - (T + 300 + LEAD_MS)}ms"`)
+    expect(later.pet.source).not.toBe(first.pet.source)
   })
 
   test('an agent starting to use a station outlines it in the scenery, not in any agent picture', () => {
-    forgetLayers()
     const idle = run([spawnEv('a', 1000), spawnEv('b', 1001)])
     const before = officeLayers(idle, 30000)
     const after = officeLayers(reduce(idle, readEv('b', 'y.ts', 30500)), 31000)
@@ -531,122 +476,16 @@ describe('officeLayers', () => {
     for (const layer of after.agents) expect(layer.source).not.toContain('values="0.95;0.35;0.95"')
   })
 
-  test('a walking agent is drawn again when the scroll key changes, a standing one is not', () => {
-    forgetLayers()
-    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
-    const walk = s.agents.a1!.walk!
-    const now = walk.startedAt + 100
-    const near = officeLayers(s, now, scrollKey(0))
-    const small = officeLayers(s, now + 100, scrollKey(30))
-    const away = officeLayers(s, now + 200, scrollKey(60))
-    const back = officeLayers(s, now + 300, scrollKey(0))
-    expect(small.agents[1]!.source).toBe(near.agents[1]!.source)
-    expect(away.agents[1]!.source).not.toBe(near.agents[1]!.source)
-    expect(back.agents[1]!.source).not.toBe(away.agents[1]!.source)
-    // A standing agent's picture (drawn at one moment) ignores the scroll key; main walks here, so look at a later moment.
-    const rested = run([spawnEv('a1', 1000)])
-    const t = 30000
-    const key0 = officeLayers(rested, t, scrollKey(0)).agents.map(l => l.source)
-    expect(officeLayers(rested, t, scrollKey(60)).agents.map(l => l.source)).toEqual(key0)
-    expect(officeLayers(rested, t, scrollKey(5)).agents.map(l => l.source)).toEqual(key0)
-  })
-
-  test('a walker is not redrawn by other agents, only when its walk ends, and then once', () => {
-    forgetLayers()
-    const s1 = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
-    const walk = s1.agents.a1!.walk!
-    const T = walk.startedAt + 100
-    const ends = walk.startedAt + walk.durationMs
-    const a1 = (l: { agents: { key: string; source: string }[] }) => l.agents.find(x => x.key === 'agent-a1')!.source
-    const first = officeLayers(s1, T)
-    const s2 = reduce(reduce(s1, spawnEv('b', T - 20)), readEv('b', 'auth.ts', T - 10))
-    expect(s2.agents.a1!.walk).toEqual(walk)
-    const mid = officeLayers(s2, T + 200)
-    expect(mid.agents.map(l => l.key)).toContain('agent-b')
-    expect(a1(mid)).toBe(a1(first))
-    // The agent's own activity changing during the walk does not start a new walk or redraw it.
-    const s3 = reduce(s2, { kind: 'toolStarted', agentId: 'a1', tool: 'Grep', target: 'other.ts', detail: '', callId: 'c2', at: T + 250 })
-    if (s3.agents.a1!.walk?.startedAt === walk.startedAt) expect(a1(officeLayers(s3, T + 300))).toBe(a1(first))
-    const after = officeLayers(s3, ends + 1000)
-    expect(a1(after)).not.toBe(a1(first))
-    expect(a1(officeLayers(s3, ends + 2000))).toBe(a1(after))
-  })
-
-  test('the cat is its own picture, drawn once, and the single picture still has it', () => {
-    forgetLayers()
+  test('the cat is its own picture, and the single picture still has it', () => {
     const s = team()
-    const first = officeLayers(s, 9000)
-    const later = officeLayers(reduce(s, readEv('b', 'y.ts', 40000)), 41000)
-    expect(first.pet.source).toContain('id="po-pet"')
-    expect(first.base.source).not.toContain('id="po-pet"')
-    expect(later.pet.source).toBe(first.pet.source)
-    expect(later.pet.key).toBe('pet')
+    const { base, pet } = officeLayers(s, 9000)
+    expect(pet.key).toBe('pet')
+    expect(pet.source).toContain('id="po-pet"')
+    expect(base.source).not.toContain('id="po-pet"')
     expect(renderOffice(s, 9000)).toContain('id="po-pet"')
   })
 
-  test('the layout does not depend on the time while agents walk', () => {
-    forgetLayers()
-    const s = run([
-      spawnEv('a', 1000, 'check the first thing in the repo'),
-      spawnEv('b', 1000, 'check the second thing in the repo'),
-      readEv('a', 'x.ts', 1100),
-      readEv('b', 'y.ts', 1100),
-    ])
-    const T = Math.max(s.agents.a!.walk!.startedAt, s.agents.b!.walk!.startedAt) + 50
-    const ends = Math.min(...['a', 'b'].map(id => s.agents[id]!.walk!.startedAt + s.agents[id]!.walk!.durationMs))
-    expect(T + 1000 + LEAD_MS).toBeLessThan(ends)
-    const first = officeLayers(s, T)
-    const second = officeLayers(s, T + 1000)
-    expect(second.agents.map(l => l.source)).toEqual(first.agents.map(l => l.source))
-    expect(second.base.source).toBe(first.base.source)
-    const drawn = ['a', 'b'].map(id => s.agents[id]!)
-    const dest = (x: Agent) => x.pos
-    expect(Array.from(tagsBelow(drawn, T, dest))).toEqual(Array.from(tagsBelow(drawn, T + 1000, dest)))
-  })
-
-  test('a trace hears of each picture drawn again, and why, and nothing on a hit', () => {
-    forgetLayers()
-    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
-    const now = s.agents.a1!.walk!.startedAt + 100
-    const heard: Record<string, unknown>[] = []
-    const trace = (e: Record<string, unknown>): void => void heard.push(e)
-    officeLayers(s, now, scrollKey(0), trace)
-    const first = heard.filter(e => e.layer === 'agent')
-    expect(first.map(e => e.id)).toEqual(['main', 'a1'])
-    for (const e of first) expect(e.why).toContain('first')
-    expect(heard.find(e => e.layer === 'base')?.why).toEqual(['first'])
-    heard.length = 0
-    officeLayers(s, now, scrollKey(0), trace)
-    expect(heard).toEqual([])
-    // Same scene and moment, but the person has scrolled away: only the walking agent is drawn again, for the scroll.
-    officeLayers(s, now, scrollKey(60), trace)
-    const scrolled = heard.filter(e => e.layer === 'agent')
-    expect(scrolled.length).toBeGreaterThan(0)
-    for (const e of scrolled) {
-      expect(e.walking).toBe(true)
-      expect(e.why).toEqual(['scroll'])
-      expect(e.scroll).toBe('off')
-    }
-    expect(scrolled.map(e => e.id)).toContain('a1')
-    expect(heard.some(e => e.layer === 'base')).toBe(false)
-  })
-
-  test('a trace names the state when an agent did something', () => {
-    forgetLayers()
-    const idle = run([spawnEv('a', 1000), spawnEv('b', 1001)])
-    const heard: Record<string, unknown>[] = []
-    const trace = (e: Record<string, unknown>): void => void heard.push(e)
-    officeLayers(idle, 30000, '0', trace)
-    heard.length = 0
-    officeLayers(reduce(idle, readEv('b', 'y.ts', 30500)), 45000, '0', trace)
-    const b = heard.find(e => e.layer === 'agent' && e.id === 'b')
-    expect(b?.why).toContain('state')
-    expect(heard.find(e => e.layer === 'agent' && e.id === 'a')?.why).not.toContain('state')
-    expect(heard.find(e => e.layer === 'base')?.why).toEqual(['signature'])
-  })
-
   test('at most MAX_LAYERS agents are drawn and the base says how many more there are', () => {
-    forgetLayers()
     let s = emptyScene()
     for (let i = 0; i < 30; i++) s = reduce(s, spawnEv(`h${i}`, 1000 + i))
     const { base, agents } = officeLayers(s, 9000)
