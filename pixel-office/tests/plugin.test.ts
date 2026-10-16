@@ -166,6 +166,12 @@ test('with the layered picture, the scenery and each agent are their own picture
   expect(pictures).toHaveLength(3)
   expect(String(pictures[0]?.props.source)).not.toContain('<g id="agent-')
   expect(String(pictures[2]?.props.source)).toContain('id="agent-agent-1"')
+  const layerBoxes = (await ui.findAll({ type: 'Box' })).filter(box => box.props.position === 'absolute')
+  expect(layerBoxes).toHaveLength(2)
+  for (const box of layerBoxes) {
+    expect(box.props.width).toBe('100%')
+    expect(box.props.height).toBe('100%')
+  }
 })
 
 test('a spawn returns before the pane opens', async ($, on) => {
