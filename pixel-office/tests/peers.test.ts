@@ -334,6 +334,8 @@ describe('who is in the office, for looking in', () => {
     const scene = play([turn('go'), hire('x1', 'Explore'), hire('x2', 'my-plugin:secret-reviewer'), hire('x3', 'general-purpose', 'secret-teammate'), its('x1', 'Read', 'secret.ts')])
     const agents = agentsOf(scene)
     expect(agents.map(a => a.id)).toEqual(['main', 'a1', 'a2', 'a3'])
+    // A helper starting work changes what it does, not who is who.
+    expect(agentsOf(play([turn('go'), hire('x1', 'Explore'), hire('x2', 'Plan')])).map(a => a.label)).toEqual(['Main', 'Researcher', 'Planner'])
     expect(agents[0]).toMatchObject({ id: 'main', boss: null, type: 'main', label: 'Main' })
     expect(agents.map(a => a.type).sort()).toEqual(['Explore', 'general-purpose', 'helper', 'main'])
     expect(agents.map(a => a.label).sort()).toEqual(['Assistant', 'Helper', 'Main', 'Researcher'])
@@ -384,5 +386,6 @@ describe('who is in the office, for looking in', () => {
     // Nobody walks: each stands where it is headed.
     expect(svg).toContain('<g id="agent-a1" transform=')
     expect(svg).toContain('Researcher')
+    expect(svg).toContain('Now: busy at Records library')
   })
 })

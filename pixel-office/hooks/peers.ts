@@ -122,7 +122,10 @@ export function agentsOf(scene: Scene): PeerAgent[] {
     .filter((a): a is Agent & { phase: PeerAgent['phase'] } => a.phase !== 'gone')
     .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt || (a.id < b.id ? -1 : 1)))
     .slice(0, PEER_AGENTS_MAX)
-  const ids = new Map(here.map((a, i) => [a.id, a.id === MAIN ? MAIN : `a${i}`]))
+  // Numbered by when each arrived, and sent in that order, so the file changes only when someone does.
+  const arrival = (id: string): number => (id === MAIN ? -1 : scene.order.indexOf(id))
+  here.sort((a, b) => arrival(a.id) - arrival(b.id))
+  const ids = new Map(here.map((a, i) => [a.id, a.id === MAIN ? MAIN : `a${arrival(a.id) < 0 ? 900 + i : arrival(a.id)}`]))
   return here.map(a => {
     const type = a.id === MAIN ? 'main' : isBuiltIn(a.type) ? a.type : 'helper'
     const title = roleFor(type).title
@@ -177,7 +180,7 @@ const ESCAPES = /\u001B(\[[0-?]*[ -\/]*[@-~]|\][^\u0007\u001B]*(\u0007|\u001B\\)
 const cleaned = (text: string, max: number): string => gist(text.slice(0, max * 4).replace(ESCAPES, '').replace(UNSEEN, ''), max)
 
 const PHASES: readonly PeerAgent['phase'][] = ['arriving', 'briefing', 'working', 'waiting', 'idle']
-const AGENT_ID = /^(main|a\d{1,2})$/
+const AGENT_ID = /^(main|a\d{1,3})$/
 const COLOR = /^#[0-9a-fA-F]{6}$/
 const isFlag = (value: unknown): value is boolean => typeof value === 'boolean'
 const isAt = (value: unknown, max: number): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max

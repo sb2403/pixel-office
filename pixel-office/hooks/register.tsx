@@ -392,11 +392,12 @@ async function lookAround($: EngineInterface, office: Office, peers: Peers, look
   const shownNow = await read($, lookedAtom)
   if (look !== peers.looks) return
   const found = looking === null ? undefined : others.find(p => peerKey(p) === looking)
+  // A press between the read above and these writes wins: each write checks the pane still looks where it did.
   if (looking !== null && found === undefined) {
     await update($, lookingAtom, current => (current === looking ? null : current))
-    await update($, lookedAtom, () => null)
+    if ((await read($, lookingAtom)) === null) await update($, lookedAtom, () => null)
   } else if (found !== undefined && (shownNow === null || lookedOf(found) !== lookedOf(shownNow))) {
-    await update($, lookedAtom, () => found)
+    if ((await read($, lookingAtom)) === looking) await update($, lookedAtom, () => found)
   }
 
   // With reminders on, another session waiting on you for a while is said once, as a toast only: that session
