@@ -439,6 +439,13 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
   the layer probe of 0.5.1 is gone: it reported one row while the agents' pictures showed, so its rows said nothing
   about the room a layer gets.
 
+## 0.6.0: one picture
+
+- **The layered picture is gone**, with its `picture` option. It drew the scenery, the cat and each agent as stacked
+  pictures so that one agent's redraw would not restart another's walk; the desktop starts every picture over
+  whenever it draws the pane (see 0.5.2), so it could never do that, and the single picture drawn afresh at every
+  render is what keeps walkers steady. A `picture` value saved by an earlier version is ignored.
+
 ## Out of scope
 
 - Other sessions on the machine (a "building" view).

@@ -394,5 +394,5 @@ export const register: Register = (on, options) => {
     return {}
   }).catch(($, e, next) => next(e))
 
-  registerPane(on, { isLayered: String(options.picture ?? 'single') === 'layered', isDebug: office.isDebug })
+  registerPane(on, { isDebug: office.isDebug })
 }

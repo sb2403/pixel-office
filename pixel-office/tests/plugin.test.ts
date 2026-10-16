@@ -173,26 +173,6 @@ test('a spawned subagent opens the office and appears in the drawing', async ($,
   expect(await ui.find({ type: 'Text', text: /Researcher · working · being briefed/ })).toBeDefined()
 })
 
-test('with the layered picture, the scenery and each agent are their own pictures', { options: { picture: 'layered' } }, async ($, on) => {
-  const { clock } = world(on)
-  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
-  await $.agent.spawn(SPAWN)
-  await clock.advance(FLUSH)
-  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
-  const pictures = await ui.findAll({ type: 'Svg' })
-  // The scenery, the cat, then one transparent picture each for Main and the helper.
-  expect(pictures).toHaveLength(4)
-  expect(String(pictures[0]?.props.source)).not.toContain('<g id="agent-')
-  expect(String(pictures[1]?.props.source)).toContain('id="po-pet"')
-  expect(String(pictures[3]?.props.source)).toContain('id="agent-agent-1"')
-  const layerBoxes = (await ui.findAll({ type: 'Box' })).filter(box => box.props.position === 'absolute')
-  expect(layerBoxes).toHaveLength(3)
-  for (const box of layerBoxes) {
-    expect(box.props.width).toBe('100%')
-    expect(box.props.height).toBe('100%')
-  }
-})
-
 test('a render with nothing new in the scene still draws each walk on from where it has got to', async ($, on) => {
   const { clock } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })

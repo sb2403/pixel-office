@@ -1,6 +1,6 @@
 {
   "name": "pixel-office",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "A live pixel-art office showing what every agent in the session is doing",
   "author": { "name": "Spencer Barrett" },
   "license": "MIT",
@@ -28,13 +28,6 @@
       "description": "After an agent has waited 30 seconds for your answer or permission, say so once, with a toast and a notification",
       "default": "off",
       "options": ["off", "after-30s"]
-    },
-    "picture": {
-      "type": "string",
-      "title": "Office picture",
-      "description": "single: one picture for everybody, drawn afresh each time the pane is drawn (the default); layered: the scenery, the cat and each agent as separate pictures stacked over each other. Layered is experimental: the app starts every picture over whenever it draws the pane, so it offers nothing over single",
-      "default": "single",
-      "options": ["layered", "single"]
     },
     "debug": {
       "type": "string",

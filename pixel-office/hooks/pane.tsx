@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import type { JobRecord } from '../types'
 import { note } from './debuglog'
 import { emptyScene, restore } from './model'
-import { STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeLayers, officeSource, orgRows, svgSize } from './render'
+import { STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
 import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -27,7 +27,7 @@ const PARTS = [
 // Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
 const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
-export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolean; isDebug?: boolean } = { isLayered: false }): void {
+export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
@@ -75,14 +75,10 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
     const { Box, Text, Button, Svg, Markdown, Client } = $.ui.resolve(e)
     const chosen = selected === null ? undefined : scene.agents[selected]
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
-    // Every picture is drawn afresh at every render, as of now: the desktop starts a picture over whenever the pane is
-    // drawn, even when its text is unchanged, so a picture kept from an earlier render would replay that moment.
-    const layers = isLayered ? officeLayers(scene, now) : undefined
     if (isDebug === true) {
       note(
         'render',
         {
-          mode: layers === undefined ? 'single' : 'layered',
           scroll: e.props.scroll?.offset ?? 0,
           columns: e.props.bodyColumns,
           selected: selected !== null,
@@ -92,33 +88,16 @@ export function registerPane(on: On, { isLayered, isDebug }: { isLayered: boolea
         },
         now,
       )
-      if (layers !== undefined) note('layers', { n: layers.agents.length }, now)
     }
-    const officePicture =
-      layers !== undefined
-        ? layers.base.source
-        : officeSource(scene, now)
+    // Drawn afresh at every render, as of now: the desktop starts the picture over whenever it draws the pane, even
+    // when its text is unchanged, so a picture kept from an earlier render would replay that moment.
+    const officePicture = officeSource(scene, now)
     const size = fitSize(svgSize(officePicture), e.props.bodyColumns)
     const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
       <Box flexDirection="column" gap={1}>
         {isDebug === true && <Client key={PROBE_TOP} module="./probe.tsx" props={{ where: 'top' }} />}
-        {layers === undefined ? (
-          <Svg source={officePicture} alt={altText(scene)} {...size} />
-        ) : (
-          <Box key="office" position="relative">
-            <Svg key="office-base" source={layers.base.source} alt={altText(scene)} {...size} />
-            <Box key={layers.pet.key} position="absolute" top={0} left={0} width="100%" height="100%">
-              <Svg key={layers.pet.key + '-svg'} source={layers.pet.source} alt="The office cat" {...size} />
-            </Box>
-            {layers.agents.map(layer => (
-              // An absolute Box has no size unless it is given one, so each layer is given the parent's whole region.
-              <Box key={layer.key} position="absolute" top={0} left={0} width="100%" height="100%">
-                <Svg key={layer.key + '-svg'} source={layer.source} alt={'Layer for ' + layer.key.replace(/^agent-/, '')} {...size} />
-              </Box>
-            ))}
-          </Box>
-        )}
+        <Svg source={officePicture} alt={altText(scene)} {...size} />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>
