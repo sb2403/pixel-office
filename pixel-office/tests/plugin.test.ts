@@ -291,6 +291,16 @@ test('Main is idle between turns and works during them', async ($, on) => {
   expect(ticker(scene())).toContain('Main finished and is waiting for your next message')
 })
 
+test('a helper starting its run is not a new task for Main', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'fix the login bug', turnId: 'turn-1' })
+  await $.turn.start({ text: 'Read-only. Do these steps...', turnId: 'turn-2', agentId: 'agent-1' })
+  await clock.advance(FLUSH)
+  expect(scene()?.job?.task).toMatch(/login bug/)
+  expect(ticker(scene()).filter(line => line === 'You gave Main a new task')).toHaveLength(1)
+})
+
 test('a turn that carries on without a prompt is a continuation', async ($, on) => {
   const { clock, scene } = world(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })

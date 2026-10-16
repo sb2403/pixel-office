@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
-import { STATUS_WORDS, agentDetails, altText, clockLabel, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
+import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -71,11 +71,11 @@ export function registerPane(on: On): void {
     const { Box, Text, Button, Svg, Markdown } = $.ui.resolve(e)
     const chosen = selected === null ? undefined : scene.agents[selected]
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
-    const officePicture = officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}`)
+    const officePicture = officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}|${Math.floor((e.props.scroll?.offset ?? 0) / SCROLL_BUCKET)}`)
     const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
       <Box flexDirection="column" gap={1}>
-        <Svg source={officePicture} alt={altText(scene)} {...svgSize(officePicture)} />
+        <Svg source={officePicture} alt={altText(scene)} {...fitSize(svgSize(officePicture), e.props.bodyColumns)} />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>

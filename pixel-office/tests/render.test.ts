@@ -9,6 +9,7 @@ import {
   altText,
   clockLabel,
   escapeXml,
+  fitSize,
   isNight,
   orgRows,
   renderOffice,
@@ -248,6 +249,16 @@ describe('renderOffice', () => {
     expect(officeSource(s, 9000, 'a1|false|false|')).toBe(clicked)
   })
 
+  test('a scroll into another bucket draws the picture again as of now, a small one does not', async () => {
+    forgetOffice()
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
+    const first = officeSource(s, 2000, 'a1|false|false||0')
+    expect(officeSource(s, 5000, 'a1|false|false||0')).toBe(first)
+    const scrolled = officeSource(s, 7000, 'a1|false|false||1')
+    expect(scrolled).not.toBe(first)
+    expect(scrolled).toBe(renderOffice(s, 7000))
+  })
+
   test('night and day differ', async () => {
     expect(isNight(new Date(2026, 9, 14, 22).getTime())).toBe(true)
     expect(isNight(new Date(2026, 9, 14, 12).getTime())).toBe(false)
@@ -429,4 +440,13 @@ test('a picture states the size its markup declares, so the pane keeps its heigh
   expect(svgSize('<svg viewBox="0 0 1 1"></svg>')).toBeUndefined()
   expect(svgSize('<svg width="0" height="10">')).toBeUndefined()
   expect(svgSize('not svg')).toBeUndefined()
+})
+
+test('the picture is sized from the pane columns, keeping its shape', async () => {
+  const size = { width: 960, height: 600 }
+  expect(fitSize(size, 160)).toEqual({ width: 1200, height: 750 })
+  expect(fitSize(size, 20)).toEqual({ width: 320, height: 200 })
+  expect(fitSize(size, 1000)).toEqual({ width: 2400, height: 1500 })
+  expect(fitSize(undefined, 100)).toBeUndefined()
+  expect(fitSize(size, NaN)).toBeUndefined()
 })
