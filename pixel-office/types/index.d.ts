@@ -120,6 +120,27 @@ export type PeerSession = {
   doing: string
   task: string
   needsYou: number
+  // Who is in that office and where they stand, so it can be looked in on. A copy older than this field sends none.
+  agents: PeerAgent[]
+}
+
+// One agent of another session, as much of it as the picture needs and nothing more: no brief, report, tool,
+// file, command or helper name. `label` is "Main" or the office's own role words ("Researcher 2"); `type` is a
+// built-in kind of agent or `helper`. `x` and `y` are where it is headed: a looked-in office shows no walks.
+export type PeerAgent = {
+  id: string
+  boss: string | null
+  type: string
+  label: string
+  phase: Exclude<Phase, 'gone'>
+  station: StationId
+  slot: number
+  x: number
+  y: number
+  look: Look
+  isBusy: boolean
+  isTeammate: boolean
+  isBackground: boolean
 }
 
 export type OfficeEvent =
@@ -168,6 +189,10 @@ declare module 'claude-code' {
       session: JobRecord[]
       // The other sessions on this computer, when that is switched on.
       others: PeerSession[]
+      // The other session whose office the picture shows instead of this one (its `sessionId:instance`), and the
+      // latest snapshot of it.
+      looking: string | null
+      looked: PeerSession | null
     }
   }
 }

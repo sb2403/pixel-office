@@ -2,8 +2,12 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { MAIN, emptyScene, reduce } from '../hooks/model'
 import {
+  PEER_AGENTS_MAX,
+  PEER_FILE_MAX,
   PEER_SCHEMA,
   STALE_MS,
+  agentsOf,
+  officeOf,
   baseName,
   contentOf,
   doingOf,
@@ -25,7 +29,8 @@ import {
   urgentOf,
 } from '../hooks/peers'
 import type { SlotSeen } from '../hooks/peers'
-import type { OfficeEvent, PeerSession, Scene } from '../types'
+import { renderOffice } from '../hooks/render'
+import type { OfficeEvent, PeerAgent, PeerSession, Scene } from '../types'
 
 const NOW = new Date(2026, 9, 16, 12, 0).getTime()
 const META = { instance: 'me', sessionId: 's-me', startedAt: NOW - 60_000, project: 'pixel-office', since: NOW - 1000 }
@@ -43,6 +48,7 @@ const peer = (extra: Partial<PeerSession> = {}): PeerSession => ({
   doing: 'running a command',
   task: 'fix the login bug',
   needsYou: 0,
+  agents: [],
   ...extra,
 })
 
@@ -297,5 +303,86 @@ describe('the list', () => {
     expect(urgentOf(a)).not.toBe(urgentOf([]))
     const b = peer({ sessionId: 'b', instance: 'b' })
     expect(urgentOf([a[0]!, b])).toBe(urgentOf([b, a[0]!]))
+  })
+})
+
+const hire = (id: string, type: string, name: string | null = null, at = NOW): OfficeEvent => ({
+  kind: 'spawned',
+  id,
+  parentId: MAIN,
+  type,
+  description: 'find the secret auth code',
+  brief: 'Look in secret.ts',
+  name,
+  isTeammate: false,
+  isBackground: false,
+  isResume: false,
+  at,
+})
+const its = (agentId: string, name: string, target: string, at = NOW + 10): OfficeEvent => ({
+  kind: 'toolStarted',
+  agentId,
+  tool: name,
+  target,
+  detail: 'rm -rf the secret folder',
+  callId: `c-${agentId}`,
+  at,
+})
+
+describe('who is in the office, for looking in', () => {
+  test('agents go by kind and role words, never by a name, a job or a file', async () => {
+    const scene = play([turn('go'), hire('x1', 'Explore'), hire('x2', 'my-plugin:secret-reviewer'), hire('x3', 'general-purpose', 'secret-teammate'), its('x1', 'Read', 'secret.ts')])
+    const agents = agentsOf(scene)
+    expect(agents.map(a => a.id)).toEqual(['main', 'a1', 'a2', 'a3'])
+    expect(agents[0]).toMatchObject({ id: 'main', boss: null, type: 'main', label: 'Main' })
+    expect(agents.map(a => a.type).sort()).toEqual(['Explore', 'general-purpose', 'helper', 'main'])
+    expect(agents.map(a => a.label).sort()).toEqual(['Assistant', 'Helper', 'Main', 'Researcher'])
+    expect(agents.find(a => a.type === 'Explore')).toMatchObject({ boss: 'main', isBusy: true })
+    const text = JSON.stringify(snapshotOf(scene, META, NOW))
+    expect(text).not.toContain('secret')
+    expect(text).not.toContain('x1')
+  })
+
+  test('a crowd is cut to the busiest few, and its snapshot stays well under the file limit', async () => {
+    const events: OfficeEvent[] = [turn('go')]
+    for (let i = 0; i < 40; i += 1) events.push(hire(`h${i}`, 'claude-code-guide', null, NOW + i))
+    const snap = snapshotOf(play(events), META, NOW)
+    expect(snap.agents).toHaveLength(PEER_AGENTS_MAX)
+    expect(snap.agents[0]?.id).toBe('main')
+    expect(JSON.stringify(snap).length).toBeLessThan(PEER_FILE_MAX * 0.75)
+    expect(parsePeer(JSON.stringify(snap))?.agents).toEqual(snap.agents)
+  })
+
+  test('a snapshot from a copy without agents, or with anything off in them, shows an empty office', async () => {
+    const { agents: _, ...old } = peer()
+    expect(parsePeer(JSON.stringify(old))?.agents).toEqual([])
+    const good: PeerAgent = { id: 'main', boss: null, type: 'main', label: 'Main', phase: 'working', station: 'desk', slot: 0, x: 85, y: 30, look: { shirt: '#185fa5', hair: '#2c2c2a', skin: '#f5c4b3' }, isBusy: true, isTeammate: false, isBackground: false }
+    expect(parsePeer(JSON.stringify(peer({ agents: [good] })))?.agents).toEqual([good])
+    const bad: unknown[] = [
+      { ...good, x: 999 },
+      { ...good, look: { ...good.look, shirt: 'url(#x)' } },
+      { ...good, type: 'my-secret-agent' },
+      { ...good, station: 'roof' },
+      { ...good, phase: 'gone' },
+      { ...good, id: '<script>' },
+      { ...good, isBusy: 'yes' },
+    ]
+    for (const agent of bad) expect(parsePeer(JSON.stringify({ ...peer(), agents: [agent] }))?.agents).toEqual([])
+    expect(parsePeer(JSON.stringify({ ...peer(), agents: [good, good] }))?.agents).toEqual([])
+    // A label is cleaned like any other text from another copy.
+    expect(parsePeer(JSON.stringify({ ...peer(), agents: [{ ...good, label: '\u001b[31mMain\u202e' }] }))?.agents[0]?.label).toBe('Main')
+  })
+
+  test("another session's office is drawn by the same code, with nothing but signs in its bubbles", async () => {
+    const scene = play([turn('go'), hire('x1', 'Explore'), its('x1', 'Read', 'secret.ts'), its(MAIN, 'Bash', 'secret.sh')])
+    const peerScene = officeOf(parsePeer(JSON.stringify(snapshotOf(scene, META, NOW)))!, NOW + 60_000)
+    expect(Object.keys(peerScene.agents).sort()).toEqual(['a1', 'main'])
+    expect(peerScene.agents.a1?.parentId).toBe(MAIN)
+    const svg = renderOffice(peerScene, NOW + 60_000)
+    expect(svg).toContain('<svg')
+    expect(svg).not.toContain('secret')
+    // Nobody walks: each stands where it is headed.
+    expect(svg).toContain('<g id="agent-a1" transform=')
+    expect(svg).toContain('Researcher')
   })
 })
