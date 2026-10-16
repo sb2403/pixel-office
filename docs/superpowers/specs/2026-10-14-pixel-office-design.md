@@ -446,9 +446,35 @@ Everything merged after 0.4.0 ships with it: the version string had not moved si
   whenever it draws the pane (see 0.5.2), so it could never do that, and the single picture drawn afresh at every
   render is what keeps walkers steady. A `picture` value saved by an earlier version is ignored.
 
+## 0.7.0: your other sessions on this computer
+
+- **What.** Option `otherSessions` (`off` by default, as everything kept on disk across sessions is): the pane lists the
+  person's other sessions on the same computer, under the feed and the team. One person, one machine. Plan:
+  `plans/2026-10-16-other-sessions.md`.
+- **Slots.** Each session claims one of 32 files, `slot-NN.json` in `<config>/pixel-office/sessions` (`CLAUDE_CONFIG_DIR`,
+  else `~/.claude`), and only ever rewrites its own: the engine has no delete, so a file per session would pile up.
+  A slot is free when missing, ended (a tombstone), its heartbeat more than 20 s from now either way, or unreadable
+  for longer than that. Two sessions that take one slot at once: the one that later reads the other's snapshot there
+  moves, to a random free slot. A hot reload takes back its session's slot on its first claim only.
+- **Snapshot, not events** (`PeerSession`, schema 1): instance (one load of the module), session id, times, the
+  project folder's base name, a status (`waiting` when anyone waits on the person), when it last changed, the kind of
+  work in fixed words (never a file, command or host), and 60 characters of the job's message. A reader checks each
+  field, drops any `doing` words the office does not write, and cleans the text again.
+- **Timing.** Its own loop on the flush timer, with its own busy flag, so a slow disk never holds up the office: a look
+  every 2 s, a write when the snapshot changed or every 6 s. The `others` atom is written at once when a session
+  comes, goes, or starts or stops waiting on the person, and otherwise at most every 10 s, as each redraw restarts the walks.
+- **A stuck disk.** A look that takes over 5 s is let go (a count of looks makes a late one change nothing), and the file
+  it was reading is left alone from then on. A file read within 2 s of its last change is read again next look, as a
+  coarse file clock can hide a rewrite of the same size.
+- **Ending.** `session.end` (not `clear` or `resume`, which go on under a new id) marks the copy ended, waits at most
+  300 ms for a look under way, reads its slot (at most 300 ms) and writes one tombstone, only over its own snapshot and
+  only if it saw the slot as its own within the stale window.
+- **Kept out.** Transcript files under `~/.claude/projects` (an undocumented format), `$.store` (one file, no lock), and
+  any network.
+
 ## Out of scope
 
-- Other sessions on the machine (a "building" view).
+- Other people's sessions, and sessions on other machines (needs a relay; see 0.7.0).
 - Terminal pixel rendering (`Raster`).
 - Replay or history beyond the ticker.
 - Sound.

@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 
-import type { JobRecord } from '../types'
+import type { JobRecord, PeerSession } from '../types'
 import { note } from './debuglog'
 import { emptyScene, restore } from './model'
+import { PEERS_SHOWN, peerRows, peersHeading } from './peers'
 import { STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
 import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
@@ -18,6 +19,7 @@ const expandedAtom = atom({ plugin: 'pixel-office', key: 'expanded' } as const, 
 const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, false)
 const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
 const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, [] as JobRecord[])
+const othersAtom = atom({ plugin: 'pixel-office', key: 'others' } as const, [] as PeerSession[])
 const LINK = '#378add'
 // The details lines a whole text belongs under.
 const PARTS = [
@@ -43,6 +45,10 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
     const hidden = rows.length - shown.length
     const details = selected === null ? [] : agentDetails(scene, selected, now)
     const recap = recapOf(scene, now)
+    // The other sessions on this computer: plain rows, as a row cannot take you to that session.
+    const others = await read($, othersAtom)
+    const peers = peerRows(others.slice(0, PEERS_SHOWN), now)
+    const peersHidden = others.length - peers.length
 
     if (e.surface === 'terminal') {
       const { Box, Text } = $.ui.resolve(e)
@@ -68,6 +74,14 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
           ))}
           {recap !== null && recapSummary(recap).map(line => <Text>{line}</Text>)}
           {recap !== null && sessionLines(sessionTotals(session, recap)).map(line => <Text>{line}</Text>)}
+          {others.length > 0 && <Text bold>{peersHeading(others)}</Text>}
+          {peers.map(row => (
+            <Box key={`peer-${row.key}`} flexDirection="column">
+              <Text wrap="truncate-end">  {row.line}</Text>
+              {row.job !== '' && <Text dimColor wrap="truncate-end">    {row.job}</Text>}
+            </Box>
+          ))}
+          {peersHidden > 0 && <Text dimColor>  +{peersHidden} more</Text>}
         </Box>
       )
     }
@@ -162,6 +176,24 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
             )}
           </Box>
         </Box>
+        {others.length > 0 && (
+          <Box key="peers" flexDirection="column">
+            <Text bold>{peersHeading(others)}</Text>
+            {peers.map(row => (
+              <Box key={`peer-${row.key}`} flexDirection="column">
+                <Text color={STATUS_COLOR[row.status]} dimColor={row.status === 'idle'} wrap="truncate-end">
+                  {row.line}
+                </Text>
+                {row.job !== '' && (
+                  <Text dimColor wrap="truncate-end">
+                    {row.job}
+                  </Text>
+                )}
+              </Box>
+            ))}
+            {peersHidden > 0 && <Text dimColor>+{peersHidden} more</Text>}
+          </Box>
+        )}
         <Box key="buttons" flexDirection="row" gap={2}>
           <Button
             key="legend"
