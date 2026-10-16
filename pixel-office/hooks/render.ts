@@ -222,18 +222,13 @@ const BUBBLE_HEIGHT = 10
 const BUBBLE_STEP = 11
 const BUBBLE_LANES = 3
 
-function bubbleLanes(
-  agents: readonly Agent[],
-  scene: Scene,
-  now: number,
-  positionOf = (a: Agent) => positionAt(a, now),
-): Map<string, number> {
+function bubbleLanes(agents: readonly Agent[], scene: Scene, now: number): Map<string, number> {
   const placed: Array<{ x0: number; x1: number; y0: number; y1: number }> = []
   const lanes = new Map<string, number>()
   for (const agent of agents) {
     const box = bubbleBox(agent, scene)
     if (box === null) continue
-    const at = positionOf(agent)
+    const at = positionAt(agent, now)
     const x0 = at.x + box.left
     const x1 = x0 + box.width
     let found = -1
@@ -299,11 +294,11 @@ const TAG_CHAR = 2.1
 
 type TagSpot = { x0: number; x1: number; y: number; isBelow: boolean }
 
-export function tagsBelow(agents: readonly Agent[], now: number, positionOf = (a: Agent) => positionAt(a, now)): Set<string> {
+export function tagsBelow(agents: readonly Agent[], now: number): Set<string> {
   const placed: TagSpot[] = []
   const below = new Set<string>()
   for (const agent of agents) {
-    const pos = positionOf(agent)
+    const pos = positionAt(agent, now)
     const half = (Array.from(agent.label).length * TAG_CHAR) / 2 + 0.5
     const spot = { x0: pos.x - half, x1: pos.x + half, y: pos.y }
     const overlap = (isBelow: boolean): number =>
@@ -339,7 +334,7 @@ export function etaBar(scene: Scene, agent: Agent, now: number): string {
 
 function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false, lane = 0): string {
   const variant: Variant = agent.id === MAIN ? 'main' : agent.isTeammate ? 'teammate' : 'plain'
-  // The clock line ticks every second; keeping it out of the drawing keeps an idle office's source unchanged.
+  // The panel's own lines (the brief, the report, the ticking job clock) stay out of the picture's title.
   const facts = agentDetails(scene, agent.id, now).filter(line => !PANEL_ONLY.some(start => line.startsWith(start)))
   const head = `<title>${escapeXml(facts.join('\n'))}</title>${leaveAt(agent, now)}`
   const tag =
@@ -445,8 +440,7 @@ function badge(extra: number): string {
   return `<g>${rect(196, 1, 42, 7, '#2c2c2a')}<text x="217" y="6.3" font-size="4.5" text-anchor="middle" fill="#ffffff">+${extra} more</text></g>`
 }
 
-// The moment the scene last changed: an event, the start of a walk, an error. It tells the pane when the picture
-// has to be drawn again.
+// The moment the scene last changed: an event, the start of a walk, an error.
 export function sceneTimeOf(scene: Scene): number {
   let latest = scene.ticker[scene.ticker.length - 1]?.at ?? 0
   for (const a of Object.values(scene.agents)) {
