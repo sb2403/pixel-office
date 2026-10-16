@@ -91,8 +91,9 @@ export function registerPane(on: On, { isLayered }: { isLayered: boolean } = { i
           <Box key="office" position="relative">
             <Svg key="office-base" source={layers.base.source} alt={altText(scene)} {...size} />
             {layers.agents.map(layer => (
-              <Box key={layer.key} position="absolute" top={0} left={0}>
-                <Svg key={layer.key + '-svg'} source={layer.source} alt=" " {...size} />
+              // An absolute Box has no size unless it is given one, so each layer is given the parent's whole region.
+              <Box key={layer.key} position="absolute" top={0} left={0} width="100%" height="100%">
+                <Svg key={layer.key + '-svg'} source={layer.source} alt={'Layer for ' + layer.key.replace(/^agent-/, '')} {...size} />
               </Box>
             ))}
           </Box>
