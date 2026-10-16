@@ -163,6 +163,12 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 - `single` (default): one picture for everybody. The cost is that any agent's event can make walkers in the picture jump back.
 - `layered` (experimental): each agent is its own picture stacked over the scenery, so one agent moving should never restart another one walking. In the author's pane it drew the scenery but not the agents, so use it only to experiment, and go back to `single` if the agents do not show.
 
+**`debug`** is for troubleshooting (for example, walkers that jump), and is off by default:
+
+- `off` (default): nothing is recorded, and nothing extra runs.
+- `on`: the mod keeps a log of what it does and writes it to `pixel-office/debug/log.jsonl` inside the plugin's folder, rewritten at most once a second and capped at the newest 3000 lines. It also draws two invisible one-cell probes in the pane (top and bottom) that report when the app mounts them, which happens again after the app unmounts and remounts them (for example when you scroll), and once a second the size of their region. Only event kinds, agent ids, tool names, counts, sizes and timings are logged: never commands, file names, labels, briefs, reports or any of your text. Send the file when asked to look into a problem, and set `debug` back to `off` afterwards.
+- How to read it: one JSON object per line, with `t` (milliseconds) and `kind`: `render` (the pane was drawn, with its scroll and panel state), `draw` (a picture was drawn again, and why), `layers` (how many agent pictures a render had and how many were redrawn), `event` (something an agent did), `flush` (a batch of events applied, and how long it took), `turn-start`, `turn-ignored` (a helper's own turn, which is not a new task) and `probe` (what the pane reported back).
+
 Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
 
 ```bash

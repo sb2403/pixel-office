@@ -562,6 +562,47 @@ describe('officeLayers', () => {
     expect(Array.from(tagsBelow(drawn, T, dest))).toEqual(Array.from(tagsBelow(drawn, T + 1000, dest)))
   })
 
+  test('a trace hears of each picture drawn again, and why, and nothing on a hit', () => {
+    forgetLayers()
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    const now = s.agents.a1!.walk!.startedAt + 100
+    const heard: Record<string, unknown>[] = []
+    const trace = (e: Record<string, unknown>): void => void heard.push(e)
+    officeLayers(s, now, scrollKey(0), trace)
+    const first = heard.filter(e => e.layer === 'agent')
+    expect(first.map(e => e.id)).toEqual(['main', 'a1'])
+    for (const e of first) expect(e.why).toContain('first')
+    expect(heard.find(e => e.layer === 'base')?.why).toEqual(['first'])
+    heard.length = 0
+    officeLayers(s, now, scrollKey(0), trace)
+    expect(heard).toEqual([])
+    // Same scene and moment, but the person has scrolled away: only the walking agent is drawn again, for the scroll.
+    officeLayers(s, now, scrollKey(60), trace)
+    const scrolled = heard.filter(e => e.layer === 'agent')
+    expect(scrolled.length).toBeGreaterThan(0)
+    for (const e of scrolled) {
+      expect(e.walking).toBe(true)
+      expect(e.why).toEqual(['scroll'])
+      expect(e.scroll).toBe('off')
+    }
+    expect(scrolled.map(e => e.id)).toContain('a1')
+    expect(heard.some(e => e.layer === 'base')).toBe(false)
+  })
+
+  test('a trace names the state when an agent did something', () => {
+    forgetLayers()
+    const idle = run([spawnEv('a', 1000), spawnEv('b', 1001)])
+    const heard: Record<string, unknown>[] = []
+    const trace = (e: Record<string, unknown>): void => void heard.push(e)
+    officeLayers(idle, 30000, '0', trace)
+    heard.length = 0
+    officeLayers(reduce(idle, readEv('b', 'y.ts', 30500)), 31000, '0', trace)
+    const b = heard.find(e => e.layer === 'agent' && e.id === 'b')
+    expect(b?.why).toContain('state')
+    expect(heard.find(e => e.layer === 'agent' && e.id === 'a')?.why).not.toContain('state')
+    expect(heard.find(e => e.layer === 'base')?.why).toEqual(['signature'])
+  })
+
   test('at most MAX_LAYERS agents are drawn and the base says how many more there are', () => {
     forgetLayers()
     let s = emptyScene()

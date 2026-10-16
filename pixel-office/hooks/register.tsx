@@ -2,11 +2,12 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import type { JobRecord, OfficeEvent, Usage } from '../types'
+import { debugOn, logText, note, takeDirty } from './debuglog'
 import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
 import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { nowOf } from './render'
-import { PANE, PANE_TITLE } from './state'
+import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
 export const FLUSH_MS = 350
@@ -20,6 +21,8 @@ const QUEUE_MAX = 500
 // With reminders on: how long an agent waits on you before the office says so, once per wait.
 export const REMIND_AFTER_MS = 30_000
 export const REMIND_TITLE = 'Pixel Office'
+// The debug log is written at most this often.
+const DEBUG_WRITE_MS = 1000
 
 // The history, when it is switched on, lives under one key of the mod's store.
 export const HISTORY_KEY = 'jobs'
@@ -67,6 +70,9 @@ type Office = {
   // When each agent now waiting on you started to, and which of them were reminded about this wait.
   waitingSince: Map<string, number>
   reminded: Set<string>
+  // The opt-in debug log: whether it is on, and when it was last written.
+  isDebug: boolean
+  lastDebugWrite: number
 }
 
 // The engine only lets `$` travel into functions declared at the top of this file, so the helpers that
@@ -128,6 +134,7 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     const now = await $.clock.now()
     const batch = office.queue
     const epoch = office.epoch
+    const began = office.isDebug ? now : 0
     office.queue = []
     const isSweepTurn = office.flushes % SWEEP_EVERY === 0
     // Saved from the batch being applied, so the record never misses the end of the turn it is about.
@@ -140,6 +147,7 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
       const applied = batch.reduce(reduce, restore(scene))
       return isSweepTurn && needsSweep(applied, now) ? reduce(applied, { kind: 'tick', at: now }) : applied
     })
+    if (office.isDebug) note('flush', { batch: batch.length, ms: (await $.clock.now()) - began }, now)
   })
   // The "On the job" clock of a selected agent is the one thing that changes with no event behind it:
   // about once a second, while a row is open, write the time to state. The pane reads that atom, and a state
@@ -169,6 +177,14 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
   await quietly(async () => {
     if (office.reminds && office.flushes % CLOCK_EVERY === 0) await remind($, office)
   })
+  // The debug log is a file the maintainer can read: rewritten as a whole, when it has changed, at most once a second.
+  await quietly(async () => {
+     if (!office.isDebug || !takeDirty()) return
+    const at = await $.clock.now()
+    if (at - office.lastDebugWrite < DEBUG_WRITE_MS) return
+    office.lastDebugWrite = at
+    await $.fs.write(`${$.plugin.root}/debug/log.jsonl`, logText())
+  })
   // The session and spawn hooks only ask for the pane; it opens here, off their path, and a failed open tries again next flush.
   await quietly(async () => {
     if (office.wantsOpen && !office.isOpened) await openPane($, office)
@@ -190,9 +206,17 @@ export const register: Register = (on, options) => {
     reminds: String(options.notify ?? 'off') === 'after-30s',
     waitingSince: new Map(),
     reminded: new Set(),
+    isDebug: String(options.debug ?? 'off') === 'on',
+    lastDebugWrite: 0,
   }
+  debugOn(office.isDebug)
 
   const push = (ev: OfficeEvent): void => {
+    if (office.isDebug) {
+      const r = ev as Record<string, unknown>
+      const agent = typeof r.agentId === 'string' ? r.agentId : typeof r.id === 'string' ? r.id : null
+      note('event', { ev: ev.kind, agent, tool: ev.kind === 'toolStarted' ? ev.tool : undefined }, ev.at)
+    }
     office.queue.push(ev)
     if (office.queue.length > QUEUE_MAX) office.queue = office.queue.slice(-QUEUE_MAX)
   }
@@ -288,7 +312,11 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     // The engine fires this for a helper's run too; only the main loop's turn is the person's message.
-    if (e.agentId !== undefined) return next(e)
+    if (e.agentId !== undefined) {
+      if (office.isDebug) note('turn-ignored', { agent: e.agentId })
+      return next(e)
+    }
+    if (office.isDebug) note('turn-start')
     // A turn started without typed text carries on from the one before.
     await quietly(async () =>
       push({ kind: 'turnStarted', isContinuation: e.text === '', task: gist(e.text, TASK_MAX), at: await $.clock.now() }),
@@ -326,5 +354,21 @@ export const register: Register = (on, options) => {
     return { text: 'Office opened.' }
   })
 
-  registerPane(on, { isLayered: String(options.picture ?? 'single') === 'layered' })
+  // What this plugin's probes (a surface module inside the pane) post: only four plain fields are kept.
+  on('ui.message', async ($, e, next) => {
+    if (e.element !== PROBE_TOP && e.element !== PROBE_BOTTOM) return next(e)
+    if (office.isDebug) {
+      const d = typeof e.data === 'object' && e.data !== null ? (e.data as Record<string, unknown>) : {}
+      note('probe', {
+        element: e.element,
+        ...(typeof d.kind === 'string' ? { msg: d.kind.slice(0, 32) } : {}), // not `kind`: that is the line's own
+        ...(typeof d.where === 'string' ? { where: d.where.slice(0, 32) } : {}),
+        ...(typeof d.columns === 'number' ? { columns: d.columns } : {}),
+        ...(typeof d.rows === 'number' ? { rows: d.rows } : {}),
+      })
+    }
+    return {}
+  }).catch(($, e, next) => next(e))
+
+  registerPane(on, { isLayered: String(options.picture ?? 'single') === 'layered', isDebug: office.isDebug })
 }
