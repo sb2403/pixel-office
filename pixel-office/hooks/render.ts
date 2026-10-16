@@ -477,18 +477,38 @@ export function svgSize(source: string): { width: number; height: number } | und
   return width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height) ? { width, height } : undefined
 }
 
+// The picture is drawn as of this far ahead of the clock, because it takes about this long to appear and start its
+// animations; drawn as of the clock, every redraw would put everyone back by that much.
+export const LEAD_MS = 250
+
+// What the picture shows, without the time. Events that change none of it (an agent doing the same thing again) leave
+// it alone, so the desktop is not asked to draw the picture again.
+export function pictureSignature(scene: Scene): string {
+  const agents: unknown[] = []
+  for (const id of scene.order) {
+    const a = scene.agents[id]
+    if (a === undefined) continue
+    agents.push([
+      id, a.label, a.type, a.phase, a.station, a.slot, a.desk, a.pos.x, a.pos.y, a.isTeammate, a.isBackground,
+      a.parentId, a.activity?.tool ?? null, a.activity?.target ?? null, a.walk?.startedAt ?? null,
+      a.walk?.durationMs ?? null, a.carry?.item ?? null, a.carry?.until ?? null, a.lastErrorAt, a.goneAt, a.outcome,
+    ])
+  }
+  return JSON.stringify([agents, scene.briefing, scene.todos === null ? null : [scene.todos.done, scene.todos.open]])
+}
+
 // The picture the pane shows. A picture whose source changes is drawn again by the desktop, which restarts every
-// walk in it and can resize it under the person's scroll, so the source only changes when the scene did: it is
-// drawn once, as of that moment, and the same text comes back until the next change. Walks and blinking play on
-// inside it meanwhile. Redrawn at the real time, so nobody is put back where they were a moment ago.
+// walk in it and can resize it under the person's scroll, so the source only changes when something visible did: it
+// is drawn once, as of a moment ahead of now, and the same text comes back until the next change. Walks and blinking
+// play on inside it meanwhile.
 let drawn: { key: string; source: string } | null = null
 
 // `interaction` names what the person has just done in the panel (which row is open, whether the legend is shown):
 // the desktop may draw the picture again when the panel changes, which restarts every animation in it from the
 // moment it was drawn, so a click draws it again as of now and a restart carries on from where everyone really is.
 export function officeSource(scene: Scene, now: number, interaction = ''): string {
-  const key = `${sceneTimeOf(scene)}:${scene.order.length}:${scene.ticker.length}:${isNight(now)}:${interaction}`
-  if (drawn === null || drawn.key !== key) drawn = { key, source: renderOffice(scene, now) }
+  const key = `${pictureSignature(scene)}:${isNight(now)}:${interaction}`
+  if (drawn === null || drawn.key !== key) drawn = { key, source: renderOffice(scene, now + LEAD_MS) }
   return drawn.source
 }
 

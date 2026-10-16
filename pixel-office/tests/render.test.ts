@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { MAIN, emptyScene, reduce, restore } from '../hooks/model'
 import {
+  LEAD_MS,
   PUFF_MS,
   STATUS_WORDS,
   SVG_BUDGET,
@@ -15,6 +16,7 @@ import {
   renderOffice,
   forgetOffice,
   officeSource,
+  pictureSignature,
   sceneTimeOf,
   svgSize,
   tagsBelow,
@@ -201,8 +203,25 @@ describe('renderOffice', () => {
     const later = reduce(s, readEv('a1', 'login.ts', 4000))
     const again = officeSource(later, 4100)
     expect(again).not.toBe(first)
-    expect(again).toBe(renderOffice(later, 4100))
+    expect(again).toBe(renderOffice(later, 4100 + LEAD_MS))
     expect(officeSource(later, 4600)).toBe(again)
+  })
+
+  test('an event that changes nothing in the picture does not draw it again, and one that does, does', async () => {
+    expect(LEAD_MS).toBeGreaterThanOrEqual(100)
+    expect(LEAD_MS).toBeLessThanOrEqual(500)
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1500)])
+    forgetOffice()
+    const first = officeSource(s, 2000)
+    // The same read again changes nothing anyone can see.
+    const that = reduce(s, readEv('a1', 'auth.ts', 2600))
+    expect(officeSource(that, 3000)).toBe(first)
+    expect(pictureSignature(that)).toBe(pictureSignature(s))
+    // A different target is a different picture, drawn a little ahead of now.
+    const thatToo = reduce(that, readEv('a1', 'login.ts', 3500))
+    expect(pictureSignature(thatToo)).not.toBe(pictureSignature(s))
+    expect(officeSource(thatToo, 4000)).not.toBe(first)
+    expect(officeSource(thatToo, 4000)).toBe(renderOffice(thatToo, 4000 + LEAD_MS))
   })
 
   test('a walking agent carries its bubble, so what it is about to do shows before it arrives', async () => {
@@ -245,7 +264,7 @@ describe('renderOffice', () => {
     // Opening a row, the legend or the job view is a new picture, drawn at the time of the click.
     const clicked = officeSource(s, 5000, 'a1|false|false|')
     expect(clicked).not.toBe(idle)
-    expect(clicked).toBe(renderOffice(s, 5000))
+    expect(clicked).toBe(renderOffice(s, 5000 + LEAD_MS))
     expect(officeSource(s, 9000, 'a1|false|false|')).toBe(clicked)
   })
 
@@ -256,7 +275,7 @@ describe('renderOffice', () => {
     expect(officeSource(s, 5000, 'a1|false|false||0')).toBe(first)
     const scrolled = officeSource(s, 7000, 'a1|false|false||1')
     expect(scrolled).not.toBe(first)
-    expect(scrolled).toBe(renderOffice(s, 7000))
+    expect(scrolled).toBe(renderOffice(s, 7000 + LEAD_MS))
   })
 
   test('night and day differ', async () => {
