@@ -483,16 +483,20 @@ export const LEAD_MS = 250
 
 // What the picture shows, without the time. Events that change none of it (an agent doing the same thing again) leave
 // it alone, so the desktop is not asked to draw the picture again.
+function agentFacts(id: string, a: Agent): unknown[] {
+  return [
+    id, a.label, a.type, a.phase, a.station, a.slot, a.desk, a.pos.x, a.pos.y, a.isTeammate, a.isBackground,
+    a.parentId, a.activity?.tool ?? null, a.activity?.target ?? null, a.walk?.startedAt ?? null,
+    a.walk?.durationMs ?? null, a.carry?.item ?? null, a.carry?.until ?? null, a.lastErrorAt, a.goneAt, a.outcome,
+  ]
+}
+
 export function pictureSignature(scene: Scene): string {
   const agents: unknown[] = []
   for (const id of scene.order) {
     const a = scene.agents[id]
     if (a === undefined) continue
-    agents.push([
-      id, a.label, a.type, a.phase, a.station, a.slot, a.desk, a.pos.x, a.pos.y, a.isTeammate, a.isBackground,
-      a.parentId, a.activity?.tool ?? null, a.activity?.target ?? null, a.walk?.startedAt ?? null,
-      a.walk?.durationMs ?? null, a.carry?.item ?? null, a.carry?.until ?? null, a.lastErrorAt, a.goneAt, a.outcome,
-    ])
+    agents.push(agentFacts(id, a))
   }
   return JSON.stringify([agents, scene.briefing, scene.todos === null ? null : [scene.todos.done, scene.todos.open]])
 }
@@ -516,13 +520,80 @@ export function forgetOffice(): void {
   drawn = null
 }
 
-export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {
-  const ranked = Object.values(scene.agents)
+const ROOT =
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" width="${WIDTH * 4}" height="${HEIGHT * 4}" ` +
+  'shape-rendering="crispEdges" font-family="monospace">'
+
+function rankedAgents(scene: Scene, now: number): Agent[] {
+  return Object.values(scene.agents)
     .filter(a => !(a.phase === 'gone' && a.goneAt !== null && now >= a.goneAt))
     .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt))
-  const head =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" width="${WIDTH * 4}" height="${HEIGHT * 4}" ` +
-    `shape-rendering="crispEdges" font-family="monospace">${OFFICE_DEFS}${officeBase(isNight(now))}`
+}
+
+// The picture as layers: the scenery is one picture and each agent is its own transparent one stacked over it. The
+// desktop draws a picture again when its source changes, and that restarts every walk inside that picture, so one
+// agent's event must only change that agent's own picture. A layer whose signature is unchanged returns the very same
+// text, which is what keeps the desktop from drawing it again.
+export const MAX_LAYERS = 24
+export type Layer = { key: string; source: string }
+
+export function agentSignature(scene: Scene, a: Agent, lane: number, isBelow: boolean, at = 0): string {
+  return JSON.stringify([
+    ...agentFacts(a.id, a), lane, isBelow, waitingOn(scene, a.id).map(h => h.label), Math.round(etaOf(scene, a, at)?.typicalMs ?? 0),
+  ])
+}
+
+export function baseSignature(scene: Scene, extra = 0): string {
+  const agents = scene.order.flatMap(id => {
+    const a = scene.agents[id]
+    return a === undefined
+      ? []
+      : [[id, a.station, a.slot, a.activity !== null, a.activity?.tool === 'Write', a.phase === 'waiting', a.phase === 'gone', a.arrivedAt, a.goneAt]]
+  })
+  return JSON.stringify([scene.briefing, scene.todos === null ? null : [scene.todos.done, scene.todos.open], agents, extra])
+}
+
+let baseDrawn: { key: string; source: string } | null = null
+const agentDrawn = new Map<string, { key: string; source: string }>()
+
+export function forgetLayers(): void {
+  baseDrawn = null
+  agentDrawn.clear()
+}
+
+export function officeLayers(scene: Scene, now: number, scrollBucket = 0): { base: Layer; agents: Layer[] } {
+  const at = now + LEAD_MS
+  const visible = rankedAgents(scene, at)
+  const ids = new Set(visible.slice(0, MAX_LAYERS).map(a => a.id))
+  const drawn = scene.order.filter(id => ids.has(id)).flatMap(id => (scene.agents[id] === undefined ? [] : [scene.agents[id]!]))
+  const extra = visible.length - drawn.length
+  const below = tagsBelow(drawn, at)
+  const lanes = bubbleLanes(drawn, scene, at)
+
+  const baseKey = `${baseSignature(scene, extra)}:${isNight(now)}`
+  if (baseDrawn === null || baseDrawn.key !== baseKey) {
+    const source = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}${officeDecor()}${petSvg(at)}${overlays(scene, at)}${extra > 0 ? badge(extra) : ''}</svg>`
+    baseDrawn = { key: baseKey, source }
+  }
+
+  const agents = drawn.map(a => {
+    const lane = lanes.get(a.id) ?? 0
+    const isBelow = below.has(a.id)
+    const key = `${agentSignature(scene, a, lane, isBelow, at)}${isWalkingAt(a, at) ? `:${scrollBucket}` : ''}`
+    let layer = agentDrawn.get(a.id)
+    if (layer === undefined || layer.key !== key) {
+      layer = { key, source: `${ROOT}${drawAgent(a, scene, at, isBelow, lane)}</svg>` }
+      agentDrawn.set(a.id, layer)
+    }
+    return { key: `agent-${a.id}`, source: layer.source }
+  })
+  for (const id of Array.from(agentDrawn.keys())) if (!ids.has(id)) agentDrawn.delete(id)
+  return { base: { key: 'base', source: baseDrawn.source }, agents }
+}
+
+export function renderOffice(scene: Scene, now: number, budget = SVG_BUDGET): string {
+  const ranked = rankedAgents(scene, now)
+  const head = `${ROOT}${OFFICE_DEFS}${officeBase(isNight(now))}`
   const props = overlays(scene, now)
   const build = (withDecor: boolean, count: number): string => {
     const drawn = ranked

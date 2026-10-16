@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { MAIN, emptyScene, reduce, restore } from '../hooks/model'
 import {
   LEAD_MS,
+  MAX_LAYERS,
   PUFF_MS,
   STATUS_WORDS,
   SVG_BUDGET,
@@ -11,7 +12,9 @@ import {
   clockLabel,
   escapeXml,
   fitSize,
+  forgetLayers,
   isNight,
+  officeLayers,
   orgRows,
   renderOffice,
   forgetOffice,
@@ -468,4 +471,72 @@ test('the picture is sized from the pane columns, keeping its shape', async () =
   expect(fitSize(size, 1000)).toEqual({ width: 2400, height: 1500 })
   expect(fitSize(undefined, 100)).toBeUndefined()
   expect(fitSize(size, NaN)).toBeUndefined()
+})
+
+describe('officeLayers', () => {
+  const team = (): Scene => run([spawnEv('a', 1000), spawnEv('b', 1001), readEv('b', 'x.ts', 1500)])
+
+  test('the scenery is one picture and each agent is its own transparent one', () => {
+    forgetLayers()
+    const { base, agents } = officeLayers(team(), 9000)
+    expect(base.source).not.toContain('<g id="agent-')
+    expect(base.source).toContain('id="po-pet"')
+    expect(agents.map(l => l.key)).toEqual(['agent-main', 'agent-a', 'agent-b'])
+    for (const layer of agents) {
+      const id = layer.key.slice('agent-'.length)
+      expect(layer.source.split(`<g id="agent-${id}"`).length - 1).toBe(1)
+      expect(layer.source.split('<g id="agent-').length - 1).toBe(1)
+      expect(layer.source).not.toContain('po-wood')
+      expect(layer.source).toStartWith('<svg')
+      expect(layer.source).toEndWith('</svg>')
+    }
+    expect(base.source).toContain('po-wood')
+    for (const layer of [base, ...agents]) expect(layer.source).toContain('width="960" height="600"')
+  })
+
+  test('an event of one agent changes only its own picture', () => {
+    forgetLayers()
+    const before = officeLayers(team(), 9000)
+    const after = officeLayers(reduce(team(), readEv('b', 'y.ts', 11000)), 12000)
+    expect(after.agents[0]!.source).toBe(before.agents[0]!.source)
+    expect(after.agents[1]!.source).toBe(before.agents[1]!.source)
+    expect(after.agents[2]!.source).not.toBe(before.agents[2]!.source)
+    expect(after.base.source).toBe(before.base.source)
+  })
+
+  test('an agent starting to use a station outlines it in the scenery, not in any agent picture', () => {
+    forgetLayers()
+    const idle = run([spawnEv('a', 1000), spawnEv('b', 1001)])
+    const before = officeLayers(idle, 30000)
+    const after = officeLayers(reduce(idle, readEv('b', 'y.ts', 30500)), 31000)
+    expect(after.base.source).not.toBe(before.base.source)
+    expect(before.base.source).not.toContain('values="0.95;0.35;0.95"')
+    expect(after.base.source).toContain('values="0.95;0.35;0.95"')
+    for (const layer of after.agents) expect(layer.source).not.toContain('values="0.95;0.35;0.95"')
+  })
+
+  test('a walking agent is drawn again when the scroll changes bucket, a standing one is not', () => {
+    forgetLayers()
+    const s = run([spawnEv('a1', 1000), readEv('a1', 'auth.ts', 1100)])
+    const walk = s.agents.a1!.walk!
+    const now = walk.startedAt + 100
+    const first = officeLayers(s, now, 0)
+    const later = officeLayers(s, now + 1000, 0)
+    const moved = officeLayers(s, now + 1000, 1)
+    expect(later.agents[1]!.source).toBe(first.agents[1]!.source)
+    expect(moved.agents[1]!.source).not.toBe(first.agents[1]!.source)
+    // Main stands: the same bucket or another leaves its picture alone.
+    const standing = officeLayers(s, now + 1000, 0)
+    expect(moved.agents[0]!.source).toBe(standing.agents[0]!.source)
+  })
+
+  test('at most MAX_LAYERS agents are drawn and the base says how many more there are', () => {
+    forgetLayers()
+    let s = emptyScene()
+    for (let i = 0; i < 30; i++) s = reduce(s, spawnEv(`h${i}`, 1000 + i))
+    const { base, agents } = officeLayers(s, 9000)
+    expect(agents.length).toBe(MAX_LAYERS)
+    expect(agents[0]!.key).toBe('agent-main')
+    expect(base.source).toContain(`+${31 - MAX_LAYERS} more`)
+  })
 })
