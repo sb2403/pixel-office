@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
 import { SCROLL_BUCKET, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
-import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg } from './recap'
+import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
@@ -16,6 +16,7 @@ const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
 const expandedAtom = atom({ plugin: 'pixel-office', key: 'expanded' } as const, null as 'brief' | 'report' | null)
 const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, false)
 const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
+const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, [] as JobRecord[])
 const LINK = '#378add'
 // The details lines a whole text belongs under.
 const PARTS = [
@@ -32,6 +33,7 @@ export function registerPane(on: On): void {
     const expanded = await read($, expandedAtom)
     const isJobOpen = await read($, jobOpenAtom)
     const history = await read($, historyAtom)
+    const session = await read($, sessionAtom)
     const selected = await read($, selectedAtom)
     // Reading the clock atom subscribes the pane to it: each write from the flush timer redraws the pane.
     const now = Math.max(await $.clock.now(), await read($, clockAtom))
@@ -64,6 +66,7 @@ export function registerPane(on: On): void {
             </Text>
           ))}
           {recap !== null && recapSummary(recap).map(line => <Text>{line}</Text>)}
+          {recap !== null && sessionLines(sessionTotals(session, recap)).map(line => <Text>{line}</Text>)}
         </Box>
       )
     }
@@ -158,6 +161,9 @@ export function registerPane(on: On): void {
           <Box key="job-view" flexDirection="column">
             {recapSummary(recap).map((line, i) => (
               <Text bold={i === 0}>{line}</Text>
+            ))}
+            {sessionLines(sessionTotals(session, recap)).map(line => (
+              <Text>{line}</Text>
             ))}
             <Svg source={recapPicture} alt={recapAlt(recap)} {...svgSize(recapPicture)} />
             {recapRows(recap).map(line => (

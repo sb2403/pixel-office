@@ -17,7 +17,7 @@ const PANE_PROPS = {
 const FLUSH = 1100
 
 // The options object is read as the hooks run, so a test can break something part way through.
-function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boolean; stored?: Record<string, unknown> } = {}) {
+function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boolean; stored?: Record<string, unknown>; hiredId?: () => string } = {}) {
   const clock = mock.clock(on, { now: new Date(2026, 9, 14, 12, 0).getTime() })
   // The world keeps the plugin's store itself, as it answers its other calls, so a test can read what was kept.
   // Values go in and come out as JSON, as the engine's do.
@@ -75,7 +75,7 @@ function world(on: On, options: { isCommandBroken?: boolean; isSceneBroken?: boo
   on('ui.panes', () => ({ value: [] }))
   on('ui.close', () => ({ value: undefined }))
   on('tool.call', ($, e) => (String(e.tool) === 'Bash' ? { deny: 'not allowed' } : { result: `ran ${String(e.tool)}`, text: 'ok' }))
-  on('agent.spawn', () => ({ model: 'test-model', agentId: 'agent-1' }))
+  on('agent.spawn', () => ({ model: 'test-model', agentId: options.hiredId?.() ?? 'agent-1' }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('classic.PermissionRequest', () => ({}))
@@ -496,6 +496,7 @@ test('the recap of this job opens from its button and tells the story in words a
   expect(await ui.find({ type: 'Text', text: /^This job: Fix the login bug$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Took \d+s · 1 helper, up to 1 at once$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^  Researcher: \d+s, handed in its report$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^This session: 1 job · 1 helper · \d+s$/ })).toBeDefined()
   const pictures = await ui.findAll({ type: 'Svg' })
   expect(pictures).toHaveLength(2)
   expect(String(pictures[1]?.props.alt)).toContain('Researcher')
@@ -505,6 +506,37 @@ test('the recap of this job opens from its button and tells the story in words a
   // The terminal gets the summary as text.
   const terminal = await $.ui.mount({ plugin: 'pixel-office', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
   expect(await terminal.find({ type: 'Text', text: /^This job: Fix the login bug$/ })).toBeDefined()
+  expect(await terminal.find({ type: 'Text', text: /^This session: 1 job · 1 helper · \d+s$/ })).toBeDefined()
+})
+
+// One job: a message, a helper that reports back, and Main's own answer.
+async function runJob($: Parameters<Parameters<typeof test>[1]>[0], clock: { advance: (ms: number) => Promise<void> }, hired: { id: string }, text: string, turnId: string) {
+  hired.id = `helper-${turnId}`
+  await $.turn.start({ text, turnId })
+  await $.agent.spawn(SPAWN)
+  await clock.advance(5000)
+  await $.turn.complete({ answer: 'found it', durationMs: 5, isAborted: false, turnId, agentId: hired.id, reason: 'answer' })
+  await clock.advance(5000)
+  await $.turn.complete({ answer: 'done', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+  await clock.advance(FLUSH)
+}
+
+test('the session total adds up each job, and a /clear starts it over', async ($, on) => {
+  // Each job hires a helper of its own, as the engine gives each hire a new id.
+  const hired = { id: 'agent-1' }
+  const { clock, stored } = world(on, { hiredId: () => hired.id })
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'pixel-office', surface: 'desktop', component: 'Pane', props: PANE_PROPS, requestId: 'pixel-office' })
+  await runJob($, clock, hired, 'Fix the login bug', 'turn-1')
+  await ui.press({ key: 'job' })
+  expect(await ui.find({ type: 'Text', text: /^This session: 1 job · 1 helper · / })).toBeDefined()
+  await runJob($, clock, hired, 'Write the docs', 'turn-2')
+  expect(await ui.find({ type: 'Text', text: /^This session: 2 jobs · 2 helpers · / })).toBeDefined()
+  // Kept in memory only: nothing reaches the store without the history option.
+  expect(stored.jobs).toBeUndefined()
+  await $.session.end(endSession('clear'))
+  await runJob($, clock, hired, 'Start over', 'turn-3')
+  expect(await ui.find({ type: 'Text', text: /^This session: 1 job · 1 helper · / })).toBeDefined()
 })
 
 test('with history on, past jobs load at the start and each job is saved as it ends', { options: { history: 'last-20' } }, async ($, on) => {

@@ -81,7 +81,18 @@ export type TickerLine = { at: number; text: string; routineOf: string | null }
 export type Job = { startedAt: number; endedAt: number | null; task: string; mainUsage: Usage | null; mainEdits?: number }
 
 // A finished job as the history keeps it, across sessions, when that is switched on.
-export type JobRecord = { startedAt: number; task: string; tookMs: number; helpers: number; peak: number; tokens: number | null }
+// The token split and Main's edits were added later: a record saved before them lacks these three.
+export type JobRecord = {
+  startedAt: number
+  task: string
+  tookMs: number
+  helpers: number
+  peak: number
+  tokens: number | null
+  mainTokens?: number | null
+  helperTokens?: number | null
+  mainEdits?: number
+}
 
 export type Scene = {
   agents: Record<string, Agent>
@@ -134,6 +145,8 @@ declare module 'claude-code' {
       expanded: 'brief' | 'report' | null
       jobOpen: boolean
       history: JobRecord[]
+      // Every job since the conversation started or was cleared, kept in memory.
+      session: JobRecord[]
     }
   }
 }

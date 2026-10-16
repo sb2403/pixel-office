@@ -4,7 +4,7 @@ import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 import type { JobRecord, OfficeEvent, Usage } from '../types'
 import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
 import { registerPane } from './pane'
-import { HISTORY_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
+import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { nowOf } from './render'
 import { PANE, PANE_TITLE } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
@@ -32,6 +32,7 @@ const clockAtom = atom({ plugin: 'pixel-office', key: 'clock' } as const, 0)
 const expandedAtom = atom({ plugin: 'pixel-office', key: 'expanded' } as const, null as 'brief' | 'report' | null)
 const jobOpenAtom = atom({ plugin: 'pixel-office', key: 'jobOpen' } as const, false)
 const historyAtom = atom({ plugin: 'pixel-office', key: 'history' } as const, [] as JobRecord[])
+const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, [] as JobRecord[])
 
 
 // A turn's token counts, summed over its requests (absent when nothing counted: an interrupt, an API error).
@@ -87,6 +88,13 @@ async function saveJob($: EngineInterface): Promise<void> {
   const list = withRecord(await read($, historyAtom), jobRecord(recap))
   await $.store.set(HISTORY_KEY, list)
   await update($, historyAtom, () => list)
+}
+
+// The session total is kept in memory whatever the history option says.
+async function recordJob($: EngineInterface): Promise<void> {
+  const recap = recapOf(restore(await read($, sceneAtom)), await $.clock.now())
+  if (recap === null) return
+  await update($, sessionAtom, list => withRecord(list, jobRecord(recap), SESSION_MAX))
 }
 
 // An agent that has waited on you for a while is said once: a toast, which shows over the transcript wherever the
@@ -150,10 +158,13 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     await update($, clockAtom, () => now)
   })
   // The history is written after the scene, so the record holds the turn that just ended.
+  const isJobDue = office.hasJobToSave
+  office.hasJobToSave = false
   await quietly(async () => {
-    if (!office.keepsHistory || !office.hasJobToSave) return
-    office.hasJobToSave = false
-    await saveJob($)
+    if (isJobDue) await recordJob($)
+  })
+  await quietly(async () => {
+    if (office.keepsHistory && isJobDue) await saveJob($)
   })
   await quietly(async () => {
     if (office.reminds && office.flushes % CLOCK_EVERY === 0) await remind($, office)
@@ -221,6 +232,9 @@ export const register: Register = (on, options) => {
       })
       await quietly(async () => {
         await update($, expandedAtom, () => null)
+      })
+      await quietly(async () => {
+        await update($, sessionAtom, () => [])
       })
     }
     return next(e)

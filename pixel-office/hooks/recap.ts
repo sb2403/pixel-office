@@ -33,6 +33,9 @@ export type Recap = {
   togetherMs: number
   peak: number
   tokens: number | null
+  // Main's own tokens, and the sum of the helpers' counted tokens; null when none were counted.
+  mainTokens: number | null
+  helperTokens: number | null
   // File edits Main made itself rather than through a helper.
   mainEdits: number
 }
@@ -85,6 +88,7 @@ export function recapOf(scene: Scene, now: number): Recap | null {
   visit(MAIN, 0)
   const helpers = lanes.filter(l => l.kind !== 'main')
   const counted = lanes.filter(l => l.tokens !== null)
+  const countedHelpers = helpers.filter(l => l.tokens !== null)
   return {
     task: job.task,
     startedAt: job.startedAt,
@@ -96,6 +100,8 @@ export function recapOf(scene: Scene, now: number): Recap | null {
     togetherMs: unionMs(helpers),
     peak: peakOf(helpers),
     tokens: counted.length === 0 ? null : counted.reduce((sum, l) => sum + (l.tokens ?? 0), 0),
+    mainTokens: lanes.find(l => l.kind === 'main')?.tokens ?? null,
+    helperTokens: countedHelpers.length === 0 ? null : countedHelpers.reduce((sum, l) => sum + (l.tokens ?? 0), 0),
     mainEdits: job.mainEdits ?? 0,
   }
 }
@@ -163,7 +169,12 @@ export function recapSummary(recap: Recap): string[] {
     recap.helpers === 0
       ? 'no helpers'
       : `${recap.helpers} helper${recap.helpers === 1 ? '' : 's'}, up to ${recap.peak} at once`
-  const cost = recap.tokens === null ? '' : ` · ${tokenCount(recap.tokens)} tokens`
+  const split = [
+    ...(recap.mainTokens === null ? [] : [`Main ${tokenCount(recap.mainTokens)}`]),
+    ...(recap.helperTokens === null ? [] : [`helpers ${tokenCount(recap.helperTokens)}`]),
+  ]
+  const cost =
+    recap.tokens === null ? '' : ` · ${tokenCount(recap.tokens)} tokens${split.length === 0 ? '' : ` (${split.join(', ')})`}`
   const lines = [recap.task === '' ? 'This job' : `This job: ${recap.task}`, `${took} · ${crew}${cost}`]
   if (recap.mainEdits > 0) {
     lines.push(`Main made ${recap.mainEdits} file edit${recap.mainEdits === 1 ? '' : 's'} itself${recap.helpers === 0 ? '' : ', not through a helper'}`)
@@ -180,8 +191,11 @@ export function recapSummary(recap: Recap): string[] {
 // One line per agent, indented by who hired whom: the table the picture is drawn from.
 export function recapRows(recap: Recap): string[] {
   return recap.lanes.map(l => {
+    const indent = '  '.repeat(l.depth)
+    // The engine reports an agent's tokens when its turn ends, so a lane still at work has none yet.
+    if (l.isOpen && l.tokens === null) return `${indent}${l.label}: ${span(l.end - l.start)}, running, tokens counted when it finishes`
     const tokens = l.tokens === null ? '' : `, ${tokenCount(l.tokens)} tokens`
-    return `${'  '.repeat(l.depth)}${l.label}: ${span(l.end - l.start)}${tokens}, ${endingOf(l)}`
+    return `${indent}${l.label}: ${span(l.end - l.start)}${tokens}, ${endingOf(l)}`
   })
 }
 
@@ -211,15 +225,61 @@ export function isRecord(value: unknown): value is JobRecord {
     typeof r.tookMs === 'number' &&
     typeof r.helpers === 'number' &&
     typeof r.peak === 'number' &&
-    (r.tokens === null || typeof r.tokens === 'number')
+    (r.tokens === null || typeof r.tokens === 'number') &&
+    (r.mainTokens === undefined || r.mainTokens === null || typeof r.mainTokens === 'number') &&
+    (r.helperTokens === undefined || r.helperTokens === null || typeof r.helperTokens === 'number') &&
+    (r.mainEdits === undefined || typeof r.mainEdits === 'number')
   )
 }
 
 // A job is saved each time Main's turn ends, so a turn that carries on later updates the same record.
-export function withRecord(list: readonly JobRecord[], record: JobRecord): JobRecord[] {
+export function withRecord(list: readonly JobRecord[], record: JobRecord, max: number = HISTORY_MAX): JobRecord[] {
   return [...list.filter(r => r.startedAt !== record.startedAt), record]
     .sort((a, b) => a.startedAt - b.startedAt)
-    .slice(-HISTORY_MAX)
+    .slice(-max)
+}
+
+// The session keeps up to this many jobs in memory.
+export const SESSION_MAX = 500
+
+export type SessionTotals = {
+  jobs: number
+  helpers: number
+  workMs: number
+  tokens: number | null
+  mainTokens: number | null
+  helperTokens: number | null
+  mainEdits: number
+}
+
+// Every job since the conversation began, the one still running included (it replaces its own saved record).
+export function sessionTotals(records: readonly JobRecord[], open: Recap | null): SessionTotals {
+  const all = open === null ? [...records] : withRecord(records, jobRecord(open), Number.MAX_SAFE_INTEGER)
+  const sum = (pick: (r: JobRecord) => number | null | undefined): number | null => {
+    const values = all.map(pick).filter((v): v is number => typeof v === 'number')
+    return values.length === 0 ? null : values.reduce((a, b) => a + b, 0)
+  }
+  return {
+    jobs: all.length,
+    helpers: all.reduce((a, r) => a + r.helpers, 0),
+    workMs: all.reduce((a, r) => a + r.tookMs, 0),
+    tokens: sum(r => r.tokens),
+    mainTokens: sum(r => r.mainTokens),
+    helperTokens: sum(r => r.helperTokens),
+    mainEdits: all.reduce((a, r) => a + (r.mainEdits ?? 0), 0),
+  }
+}
+
+// One line: This session: 4 jobs · 9 helpers · 12m 40s · 482k tokens (Main 211k, helpers 271k).
+export function sessionLines(totals: SessionTotals): string[] {
+  const crew = totals.helpers === 0 ? 'no helpers' : `${totals.helpers} helper${totals.helpers === 1 ? '' : 's'}`
+  const split = [
+    ...(totals.mainTokens === null ? [] : [`Main ${tokenCount(totals.mainTokens)}`]),
+    ...(totals.helperTokens === null ? [] : [`helpers ${tokenCount(totals.helperTokens)}`]),
+  ]
+  const cost =
+    totals.tokens === null ? '' : ` · ${tokenCount(totals.tokens)} tokens${split.length === 0 ? '' : ` (${split.join(', ')})`}`
+  return [`This session: ${totals.jobs} job${totals.jobs === 1 ? '' : 's'} · ${crew} · ${span(totals.workMs)}${cost}`]
 }
 
 export function jobRecord(recap: Recap): JobRecord {
@@ -230,6 +290,9 @@ export function jobRecord(recap: Recap): JobRecord {
     helpers: recap.helpers,
     peak: recap.peak,
     tokens: recap.tokens,
+    mainTokens: recap.mainTokens,
+    helperTokens: recap.helperTokens,
+    mainEdits: recap.mainEdits,
   }
 }
 
@@ -248,6 +311,7 @@ const LIGHT = {
   main: '#eb6834',
   waited: '#2a78d6',
   alongside: '#1baf7a',
+  token: '#9a968c',
 } as const
 const DARK = {
   surface: '#1a1a19',
@@ -257,6 +321,7 @@ const DARK = {
   main: '#d95926',
   waited: '#3987e5',
   alongside: '#199e70',
+  token: '#7d7a72',
 } as const
 // Status colors stand for how a helper's job ended, never for a kind of helper, and always with a shape.
 const STATUS = { reported: { glyph: '✓', fill: '#0ca30c' }, stopped: { glyph: '■', fill: '#fab219' }, failed: { glyph: '✕', fill: '#d03b3b' } } as const
@@ -267,12 +332,13 @@ export const KIND_WORDS: Record<LaneKind, string> = {
   alongside: 'A helper working alongside',
 }
 
-const W = 640
+const W = 758
 const PAD = 12
 const LABEL_W = 136
 const END_W = 74
 const X0 = PAD + LABEL_W
-const X1 = W - PAD - END_W
+const TOK_W = 118
+const X1 = W - PAD - END_W - TOK_W
 const TOP = 34
 const ROW_H = 22
 const BAR_H = 10
@@ -294,7 +360,7 @@ export function recapSvg(recap: Recap): string {
   const css =
     `<style>@media (prefers-color-scheme: dark){` +
     `.s{fill:${DARK.surface}}.i{fill:${DARK.ink}}.m{fill:${DARK.muted}}.g{stroke:${DARK.grid}}` +
-    `.k-main{fill:${DARK.main}}.k-waited{fill:${DARK.waited}}.k-alongside{fill:${DARK.alongside}}}</style>`
+    `.k-main{fill:${DARK.main}}.k-waited{fill:${DARK.waited}}.k-alongside{fill:${DARK.alongside}}.t{fill:${DARK.token}}}</style>`
   let out = `<rect class="s" x="0" y="0" width="${W}" height="${height}" rx="8" fill="${LIGHT.surface}"/>`
   // Legend: the kinds this job has, in a fixed order, so a color always means the same kind.
   let lx = PAD
@@ -303,6 +369,9 @@ export function recapSvg(recap: Recap): string {
     out += `<text class="m" x="${lx + 15}" y="18" font-size="11" fill="${LIGHT.muted}">${escapeXml(KIND_WORDS[kind])}</text>`
     lx += r1(15 + KIND_WORDS[kind].length * 5.6 + 16)
   }
+  const tokX = X1 + END_W + 8
+  out += `<text class="m" x="${tokX}" y="18" font-size="11" text-anchor="start" fill="${LIGHT.muted}">Tokens</text>`
+  const tokenTotal = recap.lanes.reduce((sum, l) => sum + (l.tokens ?? 0), 0)
   // Time axis: a few clean ticks, faint solid lines behind the bars.
   for (let t = 0; t <= total; t += step) {
     const tx = r1(x(recap.startedAt + t))
@@ -322,6 +391,15 @@ export function recapSvg(recap: Recap): string {
     const glyph = status === null ? '' : `<tspan fill="${status.fill}">${status.glyph}</tspan> `
     const words = lane.isOpen ? `${span(lane.end - lane.start)}…` : span(lane.end - lane.start)
     out += `<text class="i" x="${ex}" y="${r1(mid + 4)}" font-size="11" fill="${LIGHT.ink}">${glyph}${escapeXml(words)}</text>`
+    // The token column: this agent's share of the job's counted tokens, or why there is none yet.
+    if (lane.tokens !== null) {
+      const share = tokenTotal > 0 ? lane.tokens / tokenTotal : 0
+      const tw = lane.tokens > 0 ? r1(Math.max(2, share * 44)) : 0
+      out += `<rect class="t" x="${tokX}" y="${r1(mid - 2)}" width="${tw}" height="4" rx="2" fill="${LIGHT.token}"/>`
+      out += `<text class="i" x="${tokX + 48}" y="${r1(mid + 4)}" font-size="11" fill="${LIGHT.ink}">${tokenCount(lane.tokens)} · ${Math.round(share * 100)}%</text>`
+    } else {
+      out += `<text class="m" x="${tokX}" y="${r1(mid + 4)}" font-size="11" fill="${LIGHT.muted}">${lane.isOpen ? 'running' : '—'}</text>`
+    }
   })
   const title = `Timeline of this job: ${recap.lanes.length} agents`
   return (
