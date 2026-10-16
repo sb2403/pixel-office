@@ -222,13 +222,18 @@ const BUBBLE_HEIGHT = 10
 const BUBBLE_STEP = 11
 const BUBBLE_LANES = 3
 
-function bubbleLanes(agents: readonly Agent[], scene: Scene, now: number): Map<string, number> {
+function bubbleLanes(
+  agents: readonly Agent[],
+  scene: Scene,
+  now: number,
+  positionOf = (a: Agent) => positionAt(a, now),
+): Map<string, number> {
   const placed: Array<{ x0: number; x1: number; y0: number; y1: number }> = []
   const lanes = new Map<string, number>()
   for (const agent of agents) {
     const box = bubbleBox(agent, scene)
     if (box === null) continue
-    const at = positionAt(agent, now)
+    const at = positionOf(agent)
     const x0 = at.x + box.left
     const x1 = x0 + box.width
     let found = -1
@@ -294,11 +299,11 @@ const TAG_CHAR = 2.1
 
 type TagSpot = { x0: number; x1: number; y: number; isBelow: boolean }
 
-export function tagsBelow(agents: readonly Agent[], now: number): Set<string> {
+export function tagsBelow(agents: readonly Agent[], now: number, positionOf = (a: Agent) => positionAt(a, now)): Set<string> {
   const placed: TagSpot[] = []
   const below = new Set<string>()
   for (const agent of agents) {
-    const pos = positionAt(agent, now)
+    const pos = positionOf(agent)
     const half = (Array.from(agent.label).length * TAG_CHAR) / 2 + 0.5
     const spot = { x0: pos.x - half, x1: pos.x + half, y: pos.y }
     const overlap = (isBelow: boolean): number =>
@@ -456,6 +461,16 @@ export const CELL_PX = 7.5
 // bucket, so a picture that is mounted fresh starts from where everyone is, while small scrolls leave it undisturbed.
 export const SCROLL_BUCKET = 24
 
+// Rows of scroll where the picture is still partly in view are told apart in steps of 6, anything beyond is one 'off'
+// place, so scrolling away and back changes the key exactly twice (once on the way out, once on the way back) and a
+// picture that is mounted fresh is drawn as of now.
+export const SCROLL_NEAR = 48
+export function scrollKey(offset: number): string {
+  if (!Number.isFinite(offset) || offset < 0) return '0'
+  if (offset >= SCROLL_NEAR) return 'off'
+  return String(Math.floor(offset / 6))
+}
+
 // The size the picture takes in a pane of this many columns, keeping its shape.
 export function fitSize(size: { width: number; height: number } | undefined, columns: number): { width: number; height: number } | undefined {
   if (size === undefined || !Number.isFinite(columns) || columns <= 0) return undefined
@@ -561,14 +576,15 @@ export function forgetLayers(): void {
   agentDrawn.clear()
 }
 
-export function officeLayers(scene: Scene, now: number, scrollBucket = 0): { base: Layer; agents: Layer[] } {
+export function officeLayers(scene: Scene, now: number, scroll = '0'): { base: Layer; agents: Layer[] } {
   const at = now + LEAD_MS
   const visible = rankedAgents(scene, at)
   const ids = new Set(visible.slice(0, MAX_LAYERS).map(a => a.id))
   const drawn = scene.order.filter(id => ids.has(id)).flatMap(id => (scene.agents[id] === undefined ? [] : [scene.agents[id]!]))
   const extra = visible.length - drawn.length
-  const below = tagsBelow(drawn, at)
-  const lanes = bubbleLanes(drawn, scene, at)
+  // Decided from where each agent is going, not where it is this instant, so a walk never changes the answers.
+  const below = tagsBelow(drawn, at, a => a.pos)
+  const lanes = bubbleLanes(drawn, scene, at, a => a.pos)
 
   const baseKey = `${baseSignature(scene, extra)}:${isNight(now)}`
   if (baseDrawn === null || baseDrawn.key !== baseKey) {
@@ -579,7 +595,7 @@ export function officeLayers(scene: Scene, now: number, scrollBucket = 0): { bas
   const agents = drawn.map(a => {
     const lane = lanes.get(a.id) ?? 0
     const isBelow = below.has(a.id)
-    const key = `${agentSignature(scene, a, lane, isBelow, at)}${isWalkingAt(a, at) ? `:${scrollBucket}` : ''}`
+    const key = `${agentSignature(scene, a, lane, isBelow, at)}${isWalkingAt(a, at) ? `:${scroll}` : ''}`
     let layer = agentDrawn.get(a.id)
     if (layer === undefined || layer.key !== key) {
       layer = { key, source: `${ROOT}${drawAgent(a, scene, at, isBelow, lane)}</svg>` }
