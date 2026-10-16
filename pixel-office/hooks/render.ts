@@ -449,6 +449,20 @@ export function sceneTimeOf(scene: Scene): number {
   return latest
 }
 
+// The desktop draws about 7.9 px per cell column, and a little under is used so the picture never overflows the pane.
+export const CELL_PX = 7.5
+
+// Rows of scroll that count as a new place; the picture is drawn again as of now when the scroll crosses into another
+// bucket, so a picture that is mounted fresh starts from where everyone is, while small scrolls leave it undisturbed.
+export const SCROLL_BUCKET = 24
+
+// The size the picture takes in a pane of this many columns, keeping its shape.
+export function fitSize(size: { width: number; height: number } | undefined, columns: number): { width: number; height: number } | undefined {
+  if (size === undefined || !Number.isFinite(columns) || columns <= 0) return undefined
+  const width = Math.min(2400, Math.max(320, Math.round(columns * CELL_PX)))
+  return { width, height: Math.round((width * size.height) / size.width) }
+}
+
 // A picture whose box is not sized collapses while the host swaps it, which scrolls the pane back to the top, so
 // each picture is given the size its markup declares: the root element's width and height, never a nested one's.
 export function svgSize(source: string): { width: number; height: number } | undefined {

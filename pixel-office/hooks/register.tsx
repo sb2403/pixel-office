@@ -273,6 +273,8 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
+    // The engine fires this for a helper's run too; only the main loop's turn is the person's message.
+    if (e.agentId !== undefined) return next(e)
     // A turn started without typed text carries on from the one before.
     await quietly(async () =>
       push({ kind: 'turnStarted', isContinuation: e.text === '', task: gist(e.text, TASK_MAX), at: await $.clock.now() }),
