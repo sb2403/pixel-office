@@ -3,10 +3,10 @@ import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import type { JobRecord, OfficeEvent, Usage } from '../types'
 import { debugOn, logText, note, takeDirty } from './debuglog'
-import { MAIN, emptyScene, needsSweep, reduce, restore } from './model'
+import { MAIN, emptyScene, needsSweep, reduceAt, restore } from './model'
 import { registerPane } from './pane'
 import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
-import { nowOf } from './render'
+import { LEAD_MS, nowOf } from './render'
 import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
@@ -145,12 +145,15 @@ async function flush($: EngineInterface, office: Office): Promise<void> {
     // Saved from the batch being applied, so the record never misses the end of the turn it is about.
     if (batch.some(ev => ev.kind === 'turnEnded')) office.hasJobToSave = true
     if (batch.length === 0 && !(isSweepTurn && needsSweep(restore(await read($, sceneAtom)), now))) return
+    // The pane draws the picture as of LEAD_MS ahead, right after this write: the walks these events start begin
+    // there, so the picture shows each one from its first step.
+    const shownAt = now + LEAD_MS
     await update($, sceneAtom, scene => {
       // A /clear since the queue was taken makes this batch (and sweep) belong to the old conversation. The
       // updater reruns when a write misses its version, so the check holds however the two interleave.
       if (office.epoch !== epoch) return scene
-      const applied = batch.reduce(reduce, restore(scene))
-      return isSweepTurn && needsSweep(applied, now) ? reduce(applied, { kind: 'tick', at: now }) : applied
+      const applied = batch.reduce((s, ev) => reduceAt(s, ev, shownAt), restore(scene))
+      return isSweepTurn && needsSweep(applied, now) ? reduceAt(applied, { kind: 'tick', at: now }, shownAt) : applied
     })
     if (office.isDebug) note('flush', { batch: batch.length, ms: (await $.clock.now()) - began }, now)
   })

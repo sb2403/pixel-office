@@ -3,6 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { clearLog, debugOn } from '../hooks/debuglog'
 import { recapOf } from '../hooks/recap'
+import { LEAD_MS } from '../hooks/render'
 import type { Scene } from '../types'
 
 const SCENE = { plugin: 'pixel-office', key: 'scene' } as const
@@ -124,6 +125,20 @@ test('a Read call shows in the ticker and passes through unchanged', async ($, o
   await clock.advance(FLUSH)
   const value = scene()
   expect(value?.ticker.map(line => line.text)).toContain('Main is reading auth.ts')
+})
+
+test('a walk starts when the picture can show it, and the feed keeps when the call was made', async ($, on) => {
+  const { clock, scene } = world(on)
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  const at = clock.now()
+  await $.tool.call({ tool: 'Read', tool_use_id: 'tu-1', file_path: '/work/src/auth.ts' })
+  await clock.advance(FLUSH)
+  const value = scene()!
+  const walk = value.agents.main!.walk!
+  // Drawn as of the hook's time, the first picture would show Main already a flush and LEAD_MS along its walk.
+  expect(walk.startedAt - at).toBeGreaterThanOrEqual(LEAD_MS)
+  expect(walk.startedAt - at).toBeLessThanOrEqual(LEAD_MS + 350)
+  expect(value.ticker[value.ticker.length - 1]?.at).toBe(at)
 })
 
 test('the office keeps working when the command cannot be registered', async ($, on) => {

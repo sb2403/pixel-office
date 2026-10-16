@@ -349,7 +349,8 @@ function drawAgent(agent: Agent, scene: Scene, now: number, isTagBelow = false, 
   const id = `agent-${escapeXml(agent.id)}`
   if (agent.walk !== null && isWalkingAt(agent, now)) {
     const rest = splitAt(agent.walk.points, (now - agent.walk.startedAt) / agent.walk.durationMs)
-    const ms = Math.max(1, Math.round(agent.walk.startedAt + agent.walk.durationMs - now))
+    // A walk drawn before its first step plays from that step at its own pace.
+    const ms = Math.max(1, Math.round(Math.min(agent.walk.durationMs, agent.walk.startedAt + agent.walk.durationMs - now)))
     const path = `M${rest.map(p => `${n(p.x)},${n(p.y)}`).join(' L')}`
     return `<g id="${id}">${head}<animateMotion dur="${ms}ms" fill="freeze" path="${path}"/>${personSvg(agent.look, variant, ms)}${carried(agent, now)}${etaBar(scene, agent, now)}${tag}${bubble(agent, scene, lane)}${puff}</g>`
   }

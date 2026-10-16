@@ -19,6 +19,7 @@ import {
   splitAt,
   stationFor,
   targetOf,
+  toCorridor,
   todoCounts,
 } from '../hooks/stations'
 
@@ -201,6 +202,20 @@ describe('geometry', () => {
       const b = pts[i]!
       expect(a.x === b.x || a.y === b.y).toBe(true)
     }
+  })
+
+  test('the way back to the corridor stays on the path, ahead or back, whichever is shorter', async () => {
+    // Library seat 0 to server seat 0: out along the library, down to the corridor, along it, into the server room.
+    const pts = route(slotPoint('library', 0), doorOf('library', 0), slotPoint('server', 0), doorOf('server', 0))
+    const at = (distance: number): number => distance / pathLength(pts)
+    // Still in the library: ahead, out through its door.
+    expect(toCorridor(pts, at(6))).toEqual([{ x: 178, y: 44 }, doorOf('library', 0), { x: 172, y: CORRIDOR_Y }])
+    // On the corridor already: from right there.
+    expect(toCorridor(pts, at(62))).toEqual([{ x: 178, y: CORRIDOR_Y }])
+    // Down in the server room: back the way it came, never through the wall.
+    expect(toCorridor(pts, at(100))).toEqual([{ x: 184, y: 120 }, doorOf('server', 0), { x: 184, y: CORRIDOR_Y }])
+    // Before the first step, the way out of the room it stands in.
+    expect(toCorridor(pts, -0.5)).toEqual([slotPoint('library', 0), doorOf('library', 0), { x: 172, y: CORRIDOR_Y }])
   })
 
   test('splitAt and pointAlong walk a path by fraction', async () => {
