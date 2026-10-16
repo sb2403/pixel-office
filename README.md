@@ -75,7 +75,7 @@ The numbers below match the numbers in the picture.
 5. **Show legend.** A button that lists every zone with its colour and the tools it stands for. It is the same list as the table above.
 6. **Show this job.** A button that opens the recap of the job in front of you: see below.
 
-The office picture is drawn in layers: the scenery is one picture and each agent is its own transparent picture stacked on top of it, so one agent doing something never restarts another agent's walk. If the layers ever look misplaced, set the `picture` option to `single` (see Commands and options) to draw everybody in one picture, the old way.
+The office picture is drawn as one picture by default. There is an experimental layered mode, where the scenery is one picture and each agent is its own transparent picture stacked on top of it, so one agent doing something would never restart another agent's walk. It did not show the agents in the author's pane, so use it only to experiment; set the `picture` option to `layered` to try it (see Commands and options).
 
 ## The office cat
 
@@ -160,8 +160,8 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 
 **`picture`** decides how the office is drawn:
 
-- `layered` (default): each agent is its own picture over the scenery, so one agent moving never restarts another one walking.
-- `single`: one picture for everybody. Use it if the layers ever look misplaced; the cost is that any agent's event can make walkers in the picture jump back.
+- `single` (default): one picture for everybody. The cost is that any agent's event can make walkers in the picture jump back.
+- `layered` (experimental): each agent is its own picture stacked over the scenery, so one agent moving should never restart another one walking. In the author's pane it drew the scenery but not the agents, so use it only to experiment, and go back to `single` if the agents do not show.
 
 Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
 

@@ -32,8 +32,8 @@
     "picture": {
       "type": "string",
       "title": "Office picture",
-      "description": "layered: each agent is its own picture, so one agent moving never restarts another one walking; single: one picture for everybody (use it if the layers ever look misplaced)",
-      "default": "layered",
+      "description": "single: one picture for everybody (the default); layered: each agent is its own picture stacked over the scenery, so one agent moving never restarts another one walking. Layered is experimental: in some panes the agents do not show, and then use single",
+      "default": "single",
       "options": ["layered", "single"]
     }
   }

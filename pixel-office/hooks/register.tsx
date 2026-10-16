@@ -326,5 +326,5 @@ export const register: Register = (on, options) => {
     return { text: 'Office opened.' }
   })
 
-  registerPane(on, { isLayered: String(options.picture ?? 'layered') === 'layered' })
+  registerPane(on, { isLayered: String(options.picture ?? 'single') === 'layered' })
 }
