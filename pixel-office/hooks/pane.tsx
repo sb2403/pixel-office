@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 import type { JobRecord } from '../types'
 import { emptyScene, restore } from './model'
-import { STATUS_WORDS, agentDetails, altText, clockLabel, isCut, objectiveLine, officeSource, orgRows } from './render'
+import { STATUS_WORDS, agentDetails, altText, clockLabel, isCut, objectiveLine, officeSource, orgRows, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg } from './recap'
 import { PANE } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
@@ -71,9 +71,11 @@ export function registerPane(on: On): void {
     const { Box, Text, Button, Svg, Markdown } = $.ui.resolve(e)
     const chosen = selected === null ? undefined : scene.agents[selected]
     const orgWidth = Math.max(24, Math.min(40, Math.floor(e.props.bodyColumns / 2)))
+    const officePicture = officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}`)
+    const recapPicture = isJobOpen && recap !== null ? recapSvg(recap) : undefined
     return (
       <Box flexDirection="column" gap={1}>
-        <Svg source={officeSource(scene, now, `${selected ?? ''}|${isLegendOpen}|${isJobOpen}|${expanded ?? ''}`)} alt={altText(scene)} />
+        <Svg source={officePicture} alt={altText(scene)} {...svgSize(officePicture)} />
         <Box flexDirection="row" gap={2}>
           <Box key="ticker" flexDirection="column" flexGrow={1}>
             <Text bold>What's happening</Text>
@@ -152,12 +154,12 @@ export function registerPane(on: On): void {
             />
           )}
         </Box>
-        {isJobOpen && recap !== null && (
+        {recapPicture !== undefined && recap !== null && (
           <Box key="job-view" flexDirection="column">
             {recapSummary(recap).map((line, i) => (
               <Text bold={i === 0}>{line}</Text>
             ))}
-            <Svg source={recapSvg(recap)} alt={recapAlt(recap)} />
+            <Svg source={recapPicture} alt={recapAlt(recap)} {...svgSize(recapPicture)} />
             {recapRows(recap).map(line => (
               <Text dimColor>{line}</Text>
             ))}

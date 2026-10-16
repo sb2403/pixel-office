@@ -449,6 +449,20 @@ export function sceneTimeOf(scene: Scene): number {
   return latest
 }
 
+// A picture whose box is not sized collapses while the host swaps it, which scrolls the pane back to the top, so
+// each picture is given the size its markup declares: the root element's width and height, never a nested one's.
+export function svgSize(source: string): { width: number; height: number } | undefined {
+  const tag = /<svg\b[^>]*>/.exec(source)?.[0]
+  if (tag === undefined) return undefined
+  const read = (name: string): number => {
+    const value = new RegExp(`\\s${name}="(\\d+(?:\\.\\d+)?|\\.\\d+)"`).exec(tag)?.[1]
+    return value === undefined ? NaN : Number(value)
+  }
+  const width = read('width')
+  const height = read('height')
+  return width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height) ? { width, height } : undefined
+}
+
 // The picture the pane shows. A picture whose source changes is drawn again by the desktop, which restarts every
 // walk in it and can resize it under the person's scroll, so the source only changes when the scene did: it is
 // drawn once, as of that moment, and the same text comes back until the next change. Walks and blinking play on
