@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 
-import { SETTINGS, configKeyOf, parseSet, settingLines } from '../hooks/settings'
+import { SETTINGS, USAGE, configKeyOf, currentValues, replyAfterSet, parseSet, settingLines } from '../hooks/settings'
 
 const RUN = { command: 'office', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } } as const
 const PANE_PROPS = {
@@ -47,6 +47,20 @@ describe('the settings list', () => {
 })
 
 describe('/office set', () => {
+  test('a value saved but not in force is said as such, and the rows win over the loaded options', () => {
+    const history = SETTINGS[1]!
+    expect(replyAfterSet(history, 'last-20', undefined, 'off')).toBe(
+      'Keep a history of jobs was saved as last-20, but this session still uses off. It applies after /reload-plugins or in a new session.',
+    )
+    expect(replyAfterSet(history, 'last-20', undefined, 'last-20')).toBe('Keep a history of jobs is now last-20 (the newest 20 jobs, on this computer).')
+    expect(replyAfterSet(history, 'last-20', 'locked', 'off')).toBe('Keep a history of jobs was not changed: locked')
+    expect(currentValues([{ key: 'pixel-office.history', value: 'last-20' }], { history: 'off', notify: 'after-30s' })).toMatchObject({
+      history: 'last-20',
+      notify: 'after-30s',
+      debug: 'off',
+    })
+  })
+
   test('reads a name and a value, forgiving case', () => {
     const request = parseSet('  OTHERSESSIONS   On ')
     expect('error' in request ? request.error : `${request.setting.field}=${request.value}`).toBe('otherSessions=on')
@@ -60,13 +74,15 @@ describe('/office set', () => {
     expect(errorOf('')).toContain('as in /office set history last-20')
     expect(errorOf('history')).toContain('as in /office set history last-20')
     expect(errorOf('colour blue')).toBe('There is no setting called colour. The settings are autoOpen, history, notify, otherSessions, debug.')
-    expect(errorOf('history forever')).toBe('history takes off, last-20.')
+    expect(errorOf('history forever')).toBe('history can be off or last-20.')
   })
 
   test("the key is the one the engine lists for this plugin, else the plain one", () => {
     expect(configKeyOf([], 'history')).toBe('pixel-office.history')
     expect(configKeyOf(['theme', 'other-plugin.history', 'pixel-office@pixel-office.history'], 'history')).toBe('pixel-office@pixel-office.history')
     expect(configKeyOf(['pixel-office@pixel-office.notify'], 'history')).toBe('pixel-office.history')
+    // Two copies loaded: which row is this one's cannot be told.
+    expect(configKeyOf(['pixel-office@pixel-office.history', 'pixel-office@inline.history'], 'history')).toBeNull()
   })
 })
 
@@ -94,13 +110,14 @@ test('/office set passes on a refusal and changes nothing on a typo', async ($, 
   expect((await $.command.run({ ...RUN, args: 'set notify after-30s' })).text).toBe(
     'Remind me when an agent waits on me was not changed: your organization sets it',
   )
-  expect((await $.command.run({ ...RUN, args: 'set notify sometimes' })).text).toBe('notify takes off, after-30s.')
+  expect((await $.command.run({ ...RUN, args: 'set notify sometimes' })).text).toBe('notify can be off or after-30s.')
   expect(sets).toHaveLength(1)
 })
 
-test('/office alone still shows the pane', async ($, on) => {
+test('/office alone still shows the pane, and a word it does not know says what it takes', async ($, on) => {
   configWorld(on)
   await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  expect((await $.command.run({ ...RUN, args: 'setting' })).text).toBe(USAGE)
   expect((await $.command.run({ ...RUN, args: '' })).text).toBe('Office opened.')
 })
 
@@ -111,12 +128,9 @@ test('the Settings box shows the current values and changes one when pressed', {
   await ui.press({ key: 'settings' })
   expect(await ui.find({ type: 'Text', text: /^● after-30s$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^○ off$/ })).toBeDefined()
-  // The value already in force changes nothing.
-  await ui.press({ key: 'set-notify-after-30s' })
-  expect(sets).toEqual([])
   await ui.press({ key: 'set-otherSessions-on' })
   expect(sets).toEqual([{ key: 'pixel-office.otherSessions', value: 'on' }])
-  expect(await ui.find({ type: 'Text', text: 'Show my other sessions is now on (list your other sessions on this computer).' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Show my other sessions is now on (list them, sharing this one\'s status and message start through a small file).' })).toBeDefined()
   await ui.press({ key: 'settings' })
   expect(await ui.find({ type: 'Text', text: /^● after-30s$/ })).toBeUndefined()
 })

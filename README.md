@@ -146,7 +146,7 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 
 ## Commands and options
 
-**`/office`** shows or hides the office pane. Type it in any session, whatever `autoOpen` is set to. Its one-line reply is the only thing the mod ever adds to your conversation, along with the replies to the two below.
+**`/office`** shows or hides the office pane. Type it in any session, whatever `autoOpen` is set to. Its one-line reply, and the replies to the two commands below, are the only things the mod ever adds to your conversation.
 
 **`/office settings`** lists each setting below with its current value. **`/office set <name> <value>`** changes one, as in `/office set history last-20`; see Changing settings.
 
@@ -185,7 +185,7 @@ Every setting above can be changed from inside Claude Code, with nothing passed 
 - **From the chat box:** `/office settings` lists them, and `/office set <name> <value>` changes one (`/office set notify after-30s`). This also works in a terminal, where the office has no buttons.
 - **In `/config`:** Claude Code's own settings menu lists the same settings, each as a picker.
 
-All three write to the same place: your Claude Code settings file (`~/.claude/settings.json`, or `settings.json` in your `CLAUDE_CONFIG_DIR`), under `pluginConfigs`. You can edit it by hand too; start a new session afterwards:
+All three write to the same place: your Claude Code settings file (`~/.claude/settings.json` on macOS and Linux, `%USERPROFILE%\.claude\settings.json` on Windows, or `settings.json` in your `CLAUDE_CONFIG_DIR`), under `pluginConfigs`. You can edit it by hand too, or copy this block between computers to carry your settings over; start a new session afterwards:
 
 ```json
 {
@@ -197,7 +197,7 @@ All three write to the same place: your Claude Code settings file (`~/.claude/se
 }
 ```
 
-A setting left out there keeps its default. A value the setting does not list counts as left out. If your organization manages a setting, the office says it was not changed and why.
+A setting left out there keeps its default, and so does one with a value it does not recognise. If your organization manages a setting, the office says it was not changed and why.
 
 From a terminal outside Claude Code, add `--config autoOpen=session-start` to the install line, or pipe a JSON object to `configure` (PowerShell and macOS/Linux shells; in Command Prompt use one of the ways above):
 
@@ -252,7 +252,7 @@ Raise `version` in `pixel-office/.claude-plugin/plugin.json`, commit, and push. 
 
 - It is built on an early-access mod API that may change between Claude Code releases, so a new release can need a new version of this mod.
 - An organization policy can disable mods. If yours does, the office will not load.
-- Cost: it uses no model tokens. The only thing that enters your conversation is the one-line reply to `/office`.
+- Cost: it uses no model tokens. The only things that enter your conversation are the replies to `/office` and its `settings` and `set` commands.
 - Privacy: it reads tool names, file names, commands and the descriptions Claude gives them, search patterns, web hosts, message summaries, the task descriptions helpers are given, each helper's brief and report (up to 2,000 characters each for the ten most recently finished helpers, 200 for older ones), and the start of each message you send (up to 120 characters, to name the job), inside your own Claude Code, only to draw the office. It keeps them in the session's own state and sends nothing anywhere. With `history` set to `last-20` it also keeps a short record of each job on this computer across sessions, and with `otherSessions` on it shares the project folder's name, its status and the start of your current message with your other sessions through a file on this computer, both as described under Commands and options; each is off unless you switch it on.
 
 ## Keeping Main a coordinator (coordinator-guard)
