@@ -99,6 +99,7 @@ const other = (now: number, extra: Partial<PeerSession> = {}): string =>
     doing: 'running a command',
     task: 'fix the login bug',
     needsYou: 0,
+    agents: [],
     ...extra,
   } satisfies PeerSession)
 
@@ -343,4 +344,41 @@ test('a file that never answers is let go, and the rest goes on', ON, async ($, 
   const ended = $.session.end({ reason: 'prompt_input_exit', sessionId: 's-me', resume: { id: 's-me' } })
   await clock.advance(1000)
   await ended
+})
+
+const AGENT = { boss: null, type: 'main', label: 'Main', phase: 'working', station: 'desk', slot: 0, x: 85, y: 30, look: { shirt: '#185fa5', hair: '#2c2c2a', skin: '#f5c4b3' }, isBusy: true, isTeammate: false, isBackground: false } as const
+
+test('pressing another session shows its office in the picture, and Back or its end brings this one back', ON, async ($, on) => {
+  const { clock, put } = world(on)
+  const now = clock.now()
+  const agents = [
+    { ...AGENT, id: 'main' },
+    { ...AGENT, id: 'a1', boss: 'main', type: 'Explore', label: 'Researcher', station: 'library', x: 190, y: 20 },
+  ]
+  put(slotName(1), { text: other(now, { agents }), mtimeMs: now })
+  await start($)
+  await clock.advance(LOOK)
+  const ui = await mount($)
+  const picture = async () => (await ui.findAll({ type: 'Svg' }))[0]
+  expect(String((await picture())?.props.alt)).not.toContain('Another session')
+  expect(await ui.find({ type: 'Text', text: /Press one to look in/ })).toBeDefined()
+  await ui.press({ key: 'look-s-other:other' })
+  expect(String((await picture())?.props.alt)).toContain("Another session's office")
+  expect(String((await picture())?.props.alt)).toContain('Researcher at Records library')
+  expect(await ui.find({ type: 'Text', text: /^Looking in on api-server · working/ })).toBeDefined()
+  // A new beat from that session moves its people without waiting for the list's calm window.
+  const later = clock.now()
+  put(slotName(1), { text: other(later, { agents: [agents[0]!, { ...agents[1]!, station: 'server', x: 200, y: 110 }] }), mtimeMs: later })
+  await clock.advance(LOOK)
+  expect(String((await picture())?.props.alt)).toContain('Researcher at Server room')
+  await ui.press({ key: 'back' })
+  expect(String((await picture())?.props.alt)).not.toContain('Another session')
+  // Looked in on again, then the session ends: the picture goes back to this office.
+  await ui.press({ key: 'look-s-other:other' })
+  expect(String((await picture())?.props.alt)).toContain("Another session's office")
+  const end = clock.now()
+  put(slotName(1), { text: other(end, { endedAt: end }), mtimeMs: end })
+  await clock.advance(LOOK)
+  expect(String((await picture())?.props.alt)).not.toContain('Another session')
+  expect(await ui.find({ type: 'Text', text: /^Looking in on/ })).toBeUndefined()
 })

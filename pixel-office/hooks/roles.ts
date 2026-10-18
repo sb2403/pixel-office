@@ -55,3 +55,6 @@ export function tokenCount(n: number): string {
 
 // A name the engine gave an agent reads as a name: `scout` is shown as Scout. Messages still go to `scout`.
 export const asName = (name: string): string => `${name[0]?.toUpperCase() ?? ''}${name.slice(1)}`
+
+// A kind of agent Claude Code itself ships, whose name says nothing about anyone's own setup.
+export const isBuiltIn = (type: string): boolean => type === 'main' || Object.prototype.hasOwnProperty.call(ROLES, type)

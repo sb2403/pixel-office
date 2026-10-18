@@ -110,10 +110,13 @@ export function nowOf(scene: Scene, agent: Agent): string {
   if (agent.phase === 'gone') return agent.outcome === null ? 'left' : ENDINGS[agent.outcome]
   if (isCoordinating(scene, agent)) return `waiting on ${names(waitingOn(scene, agent.id))}`
   // A tool held at a permission prompt has not run yet: what the agent does now is wait for you.
+  // An activity with no tool is another session's agent looked in on: its office says where it works, not with what.
+  const isUnknown = agent.activity?.tool === ''
+  if (agent.phase === 'waiting' && isUnknown) return 'waiting on you'
   if (agent.phase === 'waiting' && (agent.activity === null || !WAITING_TOOLS.has(agent.activity.tool))) {
     return 'waiting for your permission'
   }
-  if (agent.activity !== null) return doing(agent.activity)
+  if (agent.activity !== null) return isUnknown ? `busy at ${STATIONS[agent.station].name}` : doing(agent.activity)
   switch (agent.phase) {
     case 'arriving':
       return 'arriving'

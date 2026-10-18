@@ -1,7 +1,8 @@
-import type { PeerSession, PeerStatus, Scene, StationId } from '../types'
+import type { Agent, Look, Phase, PeerAgent, PeerSession, PeerStatus, Scene, StationId } from '../types'
 import { MAIN, waitingOn } from './model'
 import { statusOf } from './render'
-import { gist, stationFor } from './stations'
+import { isBuiltIn, roleFor } from './roles'
+import { HEIGHT, STATION_ORDER, WIDTH, gist, stationFor } from './stations'
 
 // The other sessions on this computer. Each running copy of the office, with `otherSessions` on, claims one slot
 // file in a shared folder, rewrites it with a small snapshot of its own office, and reads the other slots. A slot,
@@ -21,6 +22,10 @@ export const PEER_FILE_MAX = 8192
 // How much of the project's name and of the job's message a snapshot keeps.
 export const PEER_TEXT_MAX = 60
 export const PEERS_SHOWN = 6
+// How many of a session's agents its snapshot carries: Main first, then the latest to do anything. As many as a busy
+// session has at once, and few enough to keep the file (about 250 bytes an agent) well under PEER_FILE_MAX.
+export const PEER_AGENTS_MAX = 20
+const LABEL_MAX = 24
 
 export const slotName = (slot: number): string => `slot-${String(slot).padStart(2, '0')}.json`
 const SLOT_FILE = /^slot-(\d\d)\.json$/
@@ -103,7 +108,44 @@ export function snapshotOf(scene: Scene, meta: PeerMeta, now: number): PeerSessi
     doing: doingOf(scene),
     task: scene.job === null || scene.job.endedAt !== null ? '' : gist(scene.job.task, PEER_TEXT_MAX),
     needsYou: Object.values(scene.agents).filter(a => a.phase === 'waiting').length,
+    agents: agentsOf(scene),
   }
+}
+
+const tenth = (v: number): number => Math.round(v * 10) / 10
+
+// Who is in this office, for another session to look in on: kinds of agent, role words, where each stands and
+// whether it is busy. A helper of a kind set up by its owner goes as `helper`, and a helper the office named after
+// itself ("code-reviewer", a teammate's name) goes by its role words, so no name leaves the session.
+export function agentsOf(scene: Scene): PeerAgent[] {
+  const here = Object.values(scene.agents)
+    .filter((a): a is Agent & { phase: PeerAgent['phase'] } => a.phase !== 'gone')
+    .sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : b.lastEventAt - a.lastEventAt || (a.id < b.id ? -1 : 1)))
+    .slice(0, PEER_AGENTS_MAX)
+  // Numbered by when each arrived, and sent in that order, so the file changes only when someone does.
+  const arrival = (id: string): number => (id === MAIN ? -1 : scene.order.indexOf(id))
+  here.sort((a, b) => arrival(a.id) - arrival(b.id))
+  const ids = new Map(here.map((a, i) => [a.id, a.id === MAIN ? MAIN : `a${arrival(a.id) < 0 ? 900 + i : arrival(a.id)}`]))
+  return here.map(a => {
+    const type = a.id === MAIN ? 'main' : isBuiltIn(a.type) ? a.type : 'helper'
+    const title = roleFor(type).title
+    const isRoleName = a.label === title || new RegExp(`^${title} \\d{1,3}$`).test(a.label)
+    return {
+      id: ids.get(a.id) ?? MAIN,
+      boss: a.parentId === null ? null : (ids.get(a.parentId) ?? MAIN),
+      type,
+      label: a.id === MAIN ? 'Main' : isRoleName ? a.label : title,
+      phase: a.phase,
+      station: a.station,
+      slot: a.slot,
+      x: tenth(a.pos.x),
+      y: tenth(a.pos.y),
+      look: a.look,
+      isBusy: a.activity !== null,
+      isTeammate: a.isTeammate,
+      isBackground: a.isBackground,
+    }
+  })
 }
 
 // A session that has ended says so in its slot, with nothing else in it, so the others drop it at once.
@@ -121,6 +163,7 @@ export function tombstoneOf(meta: PeerMeta, now: number): PeerSession {
     doing: '',
     task: '',
     needsYou: 0,
+    agents: [],
   }
 }
 
@@ -135,6 +178,63 @@ const UNSEEN = /[\u0080-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g
 // A whole terminal escape sequence goes, not only its escape character, which would leave "[31m" on show.
 const ESCAPES = /\u001B(\[[0-?]*[ -\/]*[@-~]|\][^\u0007\u001B]*(\u0007|\u001B\\)?|[@-_])/g
 const cleaned = (text: string, max: number): string => gist(text.slice(0, max * 4).replace(ESCAPES, '').replace(UNSEEN, ''), max)
+
+const PHASES: readonly PeerAgent['phase'][] = ['arriving', 'briefing', 'working', 'waiting', 'idle']
+const AGENT_ID = /^(main|a\d{1,3})$/
+const COLOR = /^#[0-9a-fA-F]{6}$/
+const isFlag = (value: unknown): value is boolean => typeof value === 'boolean'
+const isAt = (value: unknown, max: number): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max
+
+function parseLook(raw: unknown): Look | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { shirt, hair, skin } = raw as Record<string, unknown>
+  return isText(shirt) && COLOR.test(shirt) && isText(hair) && COLOR.test(hair) && isText(skin) && COLOR.test(skin) ? { shirt, hair, skin } : null
+}
+
+function parseAgent(raw: unknown): PeerAgent | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  const { id, boss, type, label, phase, station, slot, x, y, isBusy, isTeammate, isBackground } = r
+  if (!isText(id) || !AGENT_ID.test(id) || (boss !== null && (!isText(boss) || !AGENT_ID.test(boss)))) return null
+  if (!isText(type) || !(type === 'helper' || isBuiltIn(type)) || !isText(label)) return null
+  const knownPhase = PHASES.find(p => p === phase)
+  const knownStation = STATION_ORDER.find(st => st === station)
+  const look = parseLook(r.look)
+  if (knownPhase === undefined || knownStation === undefined || look === null) return null
+  if (!isAt(slot, 63) || !Number.isInteger(slot) || !isAt(x, WIDTH) || !isAt(y, HEIGHT)) return null
+  if (!isFlag(isBusy) || !isFlag(isTeammate) || !isFlag(isBackground)) return null
+  const name = cleaned(label, LABEL_MAX)
+  return {
+    id,
+    boss,
+    type,
+    label: name === '' ? roleFor(type).title : name,
+    phase: knownPhase,
+    station: knownStation,
+    slot,
+    x,
+    y,
+    look,
+    isBusy,
+    isTeammate,
+    isBackground,
+  }
+}
+
+// A copy from before the field sends no agents, and one that sends anything off is shown with none: an office with
+// nobody in it says less than a wrong one would.
+function parseAgents(raw: unknown): PeerAgent[] {
+  if (!Array.isArray(raw)) return []
+  const out: PeerAgent[] = []
+  const ids = new Set<string>()
+  for (const item of raw.slice(0, PEER_AGENTS_MAX)) {
+    const agent = parseAgent(item)
+    if (agent === null || ids.has(agent.id)) return []
+    ids.add(agent.id)
+    out.push(agent)
+  }
+  return out
+}
 
 export function parsePeer(text: string): PeerSession | null {
   let raw: unknown
@@ -167,8 +267,55 @@ export function parsePeer(text: string): PeerSession | null {
     doing: DOINGS.has(doing) || isWaitingOnHelpers ? doing : '',
     task: cleaned(task, PEER_TEXT_MAX),
     needsYou: Math.min(999, Math.floor(needsYou)),
+    agents: parseAgents(r.agents),
   }
 }
+
+// What names one session's row in the list, and the office being looked in on.
+export const peerKey = (peer: PeerSession): string => `${peer.sessionId}:${peer.instance}`
+
+// Another session's office, as the picture draws it: its agents where they are headed, busy or not, with nothing
+// in their bubbles but their station's sign. Times are set so nobody looks newly arrived or long gone.
+export function officeOf(peer: PeerSession, now: number): Scene {
+  const agents: Record<string, Agent> = {}
+  peer.agents.forEach((p, i) => {
+    const role = roleFor(p.type)
+    agents[p.id] = {
+      id: p.id,
+      parentId: p.id === MAIN ? null : p.boss !== null && p.boss !== p.id ? p.boss : MAIN,
+      type: p.type,
+      role: role.title,
+      name: null,
+      label: p.label,
+      description: '',
+      brief: '',
+      report: '',
+      outcome: null,
+      usage: null,
+      isTeammate: p.isTeammate,
+      isBackground: p.isBackground,
+      phase: p.phase as Phase,
+      station: p.station,
+      slot: p.slot,
+      desk: -1,
+      pos: { x: p.x, y: p.y },
+      walk: null,
+      activity: p.isBusy ? { tool: '', target: '', detail: '', callId: '', since: now } : null,
+      lastErrorAt: null,
+      lastEventAt: now - i,
+      arrivedAt: now - 60_000,
+      doneAt: null,
+      goneAt: null,
+      carry: null,
+      look: p.look,
+    }
+  })
+  const order = peer.agents.filter(p => p.id !== MAIN).map(p => p.id)
+  return { agents, order, ticker: [], todos: null, briefing: null, job: null }
+}
+
+// What a looked-in office shows: a change in any of it redraws the picture.
+export const lookedOf = (peer: PeerSession): string => JSON.stringify([peerKey(peer), peer.project, peer.status, peer.agents])
 
 // A heartbeat counts while it is near now: not older than the stale window, and not further ahead than it either,
 // so a clock set back neither keeps a dead session on show nor keeps its slot taken.
@@ -259,7 +406,7 @@ export function peerRows(peers: readonly PeerSession[], now: number): PeerRow[] 
     const waited = peer.status === 'waiting' || peer.status === 'idle' ? sinceWords(now - peer.since) : ''
     const status = waited === '' ? STATUS_WORDS[peer.status] : `${STATUS_WORDS[peer.status]} ${waited}`
     const line = [project, status, peer.doing === 'waiting on you' ? '' : peer.doing].filter(part => part !== '').join(' · ')
-    return { key: `${peer.sessionId}:${peer.instance}`, status: peer.status, line, job: peer.task === '' ? '' : `→ ${peer.task}` }
+    return { key: peerKey(peer), status: peer.status, line, job: peer.task === '' ? '' : `→ ${peer.task}` }
   })
 }
 
