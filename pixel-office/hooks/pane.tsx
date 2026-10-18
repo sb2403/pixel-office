@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { On } from 'claude-code'
+import type { On, PluginOptions } from 'claude-code'
 
 import type { JobRecord, PeerSession } from '../types'
 import { note } from './debuglog'
@@ -7,6 +7,7 @@ import { emptyScene, restore } from './model'
 import { PEERS_SHOWN, officeOf, peerKey, peerRows, peersHeading } from './peers'
 import { LEAD_MS, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, renderOffice, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
+import { SETTINGS, applySetting, meaningOf, valueOf } from './settings'
 import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
@@ -22,6 +23,8 @@ const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, []
 const othersAtom = atom({ plugin: 'pixel-office', key: 'others' } as const, [] as PeerSession[])
 const lookingAtom = atom({ plugin: 'pixel-office', key: 'looking' } as const, null as string | null)
 const lookedAtom = atom({ plugin: 'pixel-office', key: 'looked' } as const, null as PeerSession | null)
+const settingsOpenAtom = atom({ plugin: 'pixel-office', key: 'settingsOpen' } as const, false)
+const settingsNoteAtom = atom({ plugin: 'pixel-office', key: 'settingsNote' } as const, '')
 const LINK = '#378add'
 // The details lines a whole text belongs under.
 const PARTS = [
@@ -31,12 +34,14 @@ const PARTS = [
 // Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
 const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
-export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): void {
+export function registerPane(on: On, { isDebug, options = {} }: { isDebug?: boolean; options?: PluginOptions } = {}): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
     const expanded = await read($, expandedAtom)
     const isJobOpen = await read($, jobOpenAtom)
+    const isSettingsOpen = await read($, settingsOpenAtom)
+    const settingsNote = await read($, settingsNoteAtom)
     const history = await read($, historyAtom)
     const session = await read($, sessionAtom)
     const selected = await read($, selectedAtom)
@@ -230,6 +235,14 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
             label={isLegendOpen ? 'Hide legend' : 'Show legend'}
             onPress={() => update($, legendAtom, isOpen => !isOpen)}
           />
+          <Button
+            key="settings"
+            label={isSettingsOpen ? 'Hide settings' : 'Settings'}
+            onPress={async () => {
+              await update($, settingsOpenAtom, isOpen => !isOpen)
+              await update($, settingsNoteAtom, () => '')
+            }}
+          />
           {recap !== null && (
             <Button
               key="job"
@@ -260,6 +273,41 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
                 ))}
               </Box>
             )}
+          </Box>
+        )}
+        {isSettingsOpen && (
+          <Box key="settings-list" flexDirection="column">
+            <Text bold>Settings</Text>
+            <Text dimColor>Press a value to switch to it. The office reloads with it; /config shows the same settings.</Text>
+            {SETTINGS.map(setting => {
+              const current = valueOf(options, setting)
+              return (
+                <Box key={`setting-${setting.field}`} flexDirection="column" marginTop={1}>
+                  <Text>
+                    {setting.title}: <Text bold>{current}</Text>
+                    <Text dimColor>, {meaningOf(setting, current)}</Text>
+                  </Text>
+                  <Box flexDirection="row" gap={2}>
+                    {setting.choices.map(choice => (
+                      <Button
+                        key={`set-${setting.field}-${choice.value}`}
+                        plain
+                        onPress={async () => {
+                          if (choice.value === current) return
+                          const said = await applySetting($, setting, choice.value)
+                          await update($, settingsNoteAtom, () => said)
+                        }}
+                      >
+                        <Text color={choice.value === current ? undefined : LINK} bold={choice.value === current}>
+                          {choice.value === current ? `● ${choice.value}` : `○ ${choice.value}`}
+                        </Text>
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
+              )
+            })}
+            {settingsNote !== '' && <Text color="yellow">{settingsNote}</Text>}
           </Box>
         )}
         {isLegendOpen && (

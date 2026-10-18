@@ -31,6 +31,7 @@ import {
 import type { Self, SlotSeen } from './peers'
 import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { LEAD_MS, nowOf } from './render'
+import { SETTINGS_HELP, applySetting, parseSet, settingLines } from './settings'
 import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
@@ -525,7 +526,7 @@ export const register: Register = (on, options) => {
       })
     })
     await quietly(async () => {
-      await $.command.register({ name: 'office', description: 'Show or hide the pixel office' })
+      await $.command.register({ name: 'office', description: 'Show or hide the pixel office; /office settings lists its settings' })
     })
     await quietly(async () => {
       if (office.keepsHistory) await loadHistory($)
@@ -656,7 +657,14 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'office' }, async $ => {
+  on('command.run', { command: 'office' }, async ($, e) => {
+    // `/office settings` shows them, `/office set <name> <value>` changes one; `/office` alone shows or hides the pane.
+    const [verb = '', ...rest] = e.args.trim().split(/\s+/)
+    if (verb.toLowerCase() === 'settings') return { text: [...settingLines(options), SETTINGS_HELP].join('\n') }
+    if (verb.toLowerCase() === 'set') {
+      const request = parseSet(rest.join(' '))
+      return { text: 'error' in request ? request.error : await applySetting($, request.setting, request.value) }
+    }
     const panes = await $.ui.panes()
     if (panes.some(pane => pane.id === PANE)) {
       await $.ui.close({ id: PANE })
@@ -682,5 +690,5 @@ export const register: Register = (on, options) => {
     return {}
   }).catch(($, e, next) => next(e))
 
-  registerPane(on, { isDebug: office.isDebug })
+  registerPane(on, { isDebug: office.isDebug, options })
 }

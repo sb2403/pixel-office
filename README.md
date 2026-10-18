@@ -116,7 +116,7 @@ In a terminal session the pane shows the same feed and team as plain text, under
 Install the "Pixel Office" Claude Code mod for me. Use the Claude Code CLI bundled with this desktop app: on Windows it is under `%APPDATA%\Claude\claude-code\<version>\…\claude.exe`, on macOS under `~/Library/Application Support/Claude/claude-code/<version>/` (pick the newest version folder; use `claude` on PATH only if it is 2.1.295 or newer). Run `<that claude> --version` and confirm it is 2.1.295 or newer. Then run `<that claude> plugin marketplace add sb2403/pixel-office` and `<that claude> plugin install pixel-office@pixel-office --config autoOpen=session-start`, show me `<that claude> plugin list`, and tell me to start a new session.
 ```
 
-Approve the commands when Claude asks. The `--config autoOpen=session-start` in that prompt makes the office open at the start of every session; to change that, see Commands and options below. If the bundled version is older than 2.1.295, update the Claude desktop app first. Then start a new session and the office opens.
+Approve the commands when Claude asks. The `--config autoOpen=session-start` in that prompt makes the office open at the start of every session; to change that or any other setting later, press **Settings** in the office (see Changing settings below). If the bundled version is older than 2.1.295, update the Claude desktop app first. Then start a new session and the office opens.
 
 **Option 2: From a terminal.**
 
@@ -133,7 +133,7 @@ The same two steps also work inside a terminal Claude Code session, as `/plugin 
 
 The Claude desktop app's built-in plugin browser won't find this mod; use Option 1 or Option 2 above. Once installed, it loads in desktop sessions too.
 
-Nothing asks you anything: the install goes ahead at user scope, which is the default, and then prints a note that options are not set yet. That is fine: each stays at its default. `autoOpen`, the option for when the office opens by itself, stays at `on-first-subagent`, and `history` stays `off`. To pick another value, add `--config autoOpen=session-start` (or `never`) to the install line, or set it later with `/plugin configure pixel-office@pixel-office` or the `--values-stdin` form under Commands and options below. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
+Nothing asks you anything: the install goes ahead at user scope, which is the default, and then prints a note that options are not set yet. That is fine: each stays at its default. `autoOpen`, the option for when the office opens by itself, stays at `on-first-subagent`, and `history` stays `off`. To pick another value, press **Settings** in the office, or type `/office settings` (see Changing settings below). Nothing has to be set at install. Start a new session: the office opens the first time a subagent is hired, or any time with `/office`.
 
 **Fallback.** If those commands do not work, download the repository from GitHub (Code → Download ZIP, then unzip it) or run `git clone https://github.com/sb2403/pixel-office`. Then run these two commands in a terminal, with the path set to the unzipped or cloned folder:
 
@@ -146,7 +146,9 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 
 ## Commands and options
 
-**`/office`** shows or hides the office pane. Type it in any session, whatever `autoOpen` is set to. Its one-line reply is the only thing the mod ever adds to your conversation.
+**`/office`** shows or hides the office pane. Type it in any session, whatever `autoOpen` is set to. Its one-line reply is the only thing the mod ever adds to your conversation, along with the replies to the two below.
+
+**`/office settings`** lists each setting below with its current value. **`/office set <name> <value>`** changes one, as in `/office set history last-20`; see Changing settings.
 
 **`autoOpen`** decides when the office opens by itself:
 
@@ -175,21 +177,35 @@ The quotes are needed if the path has spaces in it, and harmless if it does not.
 - `on`: the mod keeps a log of what it does and writes it to `pixel-office/debug/log.jsonl` inside the plugin's folder, rewritten at most once a second and capped at the newest 3000 lines. It also draws two invisible one-cell probes in the pane (top and bottom) that report when the app mounts them, which happens again after the app unmounts and remounts them (for example when you scroll), and once a second the size of their region. Only event kinds, agent ids, tool names, counts, sizes and timings are logged: never commands, file names, labels, briefs, reports or any of your text. Send the file when asked to look into a problem, and set `debug` back to `off` afterwards.
 - How to read it: one JSON object per line, with `t` (milliseconds) and `kind`: `render` (the pane was drawn, with its scroll and panel state), `event` (something an agent did), `flush` (a batch of events applied, and how long it took), `turn-start`, `turn-ignored` (a helper's own turn, which is not a new task) and `probe` (what the pane reported back).
 
-Optional. To set it while installing, instead of answering the options screen, run this in place of the second install command (after `claude plugin marketplace add sb2403/pixel-office`):
+### Changing settings
 
-```bash
-claude plugin install pixel-office@pixel-office --config autoOpen=session-start
+Every setting above can be changed from inside Claude Code, with nothing passed at install or launch:
+
+- **In the office:** press **Settings** under the picture. Each setting shows its current value; press another value to switch to it. The office reloads with it straight away.
+- **From the chat box:** `/office settings` lists them, and `/office set <name> <value>` changes one (`/office set notify after-30s`). This also works in a terminal, where the office has no buttons.
+- **In `/config`:** Claude Code's own settings menu lists the same settings, each as a picker.
+
+All three write to the same place: your Claude Code settings file (`~/.claude/settings.json`, or `settings.json` in your `CLAUDE_CONFIG_DIR`), under `pluginConfigs`. You can edit it by hand too; start a new session afterwards:
+
+```json
+{
+  "pluginConfigs": {
+    "pixel-office@pixel-office": {
+      "options": { "autoOpen": "session-start", "history": "last-20" }
+    }
+  }
+}
 ```
 
-To change it later, run `/plugin configure pixel-office@pixel-office` inside Claude Code, or save the value from a terminal by piping a JSON object to `configure`:
+A setting left out there keeps its default. A value the setting does not list counts as left out. If your organization manages a setting, the office says it was not changed and why.
+
+From a terminal outside Claude Code, add `--config autoOpen=session-start` to the install line, or pipe a JSON object to `configure` (PowerShell and macOS/Linux shells; in Command Prompt use one of the ways above):
 
 ```bash
 echo '{"autoOpen":"never"}' | claude plugin configure pixel-office@pixel-office --values-stdin
 ```
 
-That one-liner is for PowerShell and for macOS/Linux shells. In Command Prompt (cmd.exe) the single quotes would be passed through as part of the text, so use `/plugin configure` there, or run it from PowerShell.
-
-Either way the new value applies to sessions you start afterwards. `claude plugin configure pixel-office@pixel-office` on its own only shows the options and whether each is set; it changes nothing.
+A value set from a terminal applies to sessions you start afterwards.
 
 ## What does it mean when...
 
