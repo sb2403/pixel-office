@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { On } from 'claude-code'
+import type { EngineInterface, On, PluginOptions } from 'claude-code'
 
 import type { JobRecord, PeerSession } from '../types'
 import { note } from './debuglog'
@@ -7,6 +7,8 @@ import { emptyScene, restore } from './model'
 import { PEERS_SHOWN, officeOf, peerKey, peerRows, peersHeading } from './peers'
 import { LEAD_MS, STATUS_WORDS, agentDetails, altText, clockLabel, fitSize, isCut, objectiveLine, officeSource, orgRows, renderOffice, svgSize } from './render'
 import { historyLine, recapAlt, recapOf, recapRows, recapSummary, recapSvg, sessionLines, sessionTotals } from './recap'
+import { CANNOT, MANY_COPIES, SETTINGS, configKeyOf, currentValues, meaningOf, replyAfterSet, setReply } from './settings'
+import type { Setting } from './settings'
 import { PANE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { STATIONS, STATION_ORDER } from './stations'
 
@@ -22,6 +24,8 @@ const sessionAtom = atom({ plugin: 'pixel-office', key: 'session' } as const, []
 const othersAtom = atom({ plugin: 'pixel-office', key: 'others' } as const, [] as PeerSession[])
 const lookingAtom = atom({ plugin: 'pixel-office', key: 'looking' } as const, null as string | null)
 const lookedAtom = atom({ plugin: 'pixel-office', key: 'looked' } as const, null as PeerSession | null)
+const settingsOpenAtom = atom({ plugin: 'pixel-office', key: 'settingsOpen' } as const, false)
+const settingsNoteAtom = atom({ plugin: 'pixel-office', key: 'settingsNote' } as const, '')
 const LINK = '#378add'
 // The details lines a whole text belongs under.
 const PARTS = [
@@ -31,12 +35,49 @@ const PARTS = [
 // Coordinating wears the meeting room's teal: a boss waiting on its helpers, not on you.
 const STATUS_COLOR = { working: 'green', coordinating: STATIONS.meeting.color, waiting: 'yellow', idle: 'gray', done: 'gray' } as const
 
-export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): void {
+// Changes one setting the way the `/config` menu does, and says how it went. pane.tsx and register.tsx each have
+// this: the engine follows `$` only into a function of the same file.
+async function changeSetting($: EngineInterface, setting: Setting, value: string): Promise<string> {
+  let keys: string[] = []
+  try {
+    keys = (await $.config.list()).map(row => row.key)
+  } catch {
+    // An engine without the listing: the key is the plain one.
+  }
+  const key = configKeyOf(keys, setting.field)
+  if (key === null) return setReply(setting, value, MANY_COPIES)
+  let deny: string | undefined
+  try {
+    deny = (await $.config.set({ key, value })).deny
+  } catch {
+    return setReply(setting, value, CANNOT)
+  }
+  let stored: unknown
+  try {
+    stored = (await $.config.list()).find(row => row.key === key)?.value
+  } catch {
+    // Not listed: the change is taken at its word.
+  }
+  return replyAfterSet(setting, value, deny, stored)
+}
+
+export function registerPane(on: On, { isDebug, options = {} }: { isDebug?: boolean; options?: PluginOptions } = {}): void {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const scene = restore(await read($, sceneAtom))
     const isLegendOpen = await read($, legendAtom)
     const expanded = await read($, expandedAtom)
     const isJobOpen = await read($, jobOpenAtom)
+    const isSettingsOpen = await read($, settingsOpenAtom)
+    const settingsNote = await read($, settingsNoteAtom)
+    let configRows: Array<{ key: string; value: unknown }> = []
+    if (isSettingsOpen) {
+      try {
+        configRows = await $.config.list()
+      } catch {
+        // An engine without the listing: the options the office loaded with.
+      }
+    }
+    const values = currentValues(configRows, options)
     const history = await read($, historyAtom)
     const session = await read($, sessionAtom)
     const selected = await read($, selectedAtom)
@@ -65,7 +106,7 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
       const { Box, Text } = $.ui.resolve(e)
       return (
         <Box flexDirection="column">
-          <Text dimColor>Open this session in the Claude desktop app to see the pixel office.</Text>
+          <Text dimColor>Open this session in the Claude desktop app to see the pixel office. /office settings lists its settings.</Text>
           {shown.map(row => {
             const objective = objectiveLine(scene, row.id, row.depth, e.props.bodyColumns)
             return (
@@ -230,6 +271,14 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
             label={isLegendOpen ? 'Hide legend' : 'Show legend'}
             onPress={() => update($, legendAtom, isOpen => !isOpen)}
           />
+          <Button
+            key="settings"
+            label={isSettingsOpen ? 'Hide settings' : 'Settings'}
+            onPress={async () => {
+              await update($, settingsOpenAtom, isOpen => !isOpen)
+              await update($, settingsNoteAtom, () => '')
+            }}
+          />
           {recap !== null && (
             <Button
               key="job"
@@ -260,6 +309,42 @@ export function registerPane(on: On, { isDebug }: { isDebug?: boolean } = {}): v
                 ))}
               </Box>
             )}
+          </Box>
+        )}
+        {isSettingsOpen && (
+          <Box key="settings-list" flexDirection="column">
+            <Text bold>Settings</Text>
+            <Text dimColor>Press a value to switch to it. /config shows the same settings.</Text>
+            {SETTINGS.map(setting => {
+              const current = values[setting.field] ?? setting.fallback
+              return (
+                <Box key={`setting-${setting.field}`} flexDirection="column" marginTop={1}>
+                  <Text>
+                    {setting.title}: <Text bold>{current}</Text>
+                    <Text dimColor>, {meaningOf(setting, current)}</Text>
+                  </Text>
+                  <Box flexDirection="row" gap={2}>
+                    {setting.choices.map(choice => (
+                      <Button
+                        key={`set-${setting.field}-${choice.value}`}
+                        plain
+                        onPress={async () => {
+                          // Said first: a change that takes loads the office again, and this press may not see the end of it.
+                          await update($, settingsNoteAtom, () => setReply(setting, choice.value, undefined))
+                          const said = await changeSetting($, setting, choice.value)
+                          await update($, settingsNoteAtom, () => said)
+                        }}
+                      >
+                        <Text color={choice.value === current ? undefined : LINK} bold={choice.value === current}>
+                          {choice.value === current ? `● ${choice.value}` : `○ ${choice.value}`}
+                        </Text>
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
+              )
+            })}
+            {settingsNote !== '' && <Text color="yellow">{settingsNote}</Text>}
           </Box>
         )}
         {isLegendOpen && (

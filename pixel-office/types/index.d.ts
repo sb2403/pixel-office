@@ -193,6 +193,9 @@ declare module 'claude-code' {
       // latest snapshot of it.
       looking: string | null
       looked: PeerSession | null
+      // Whether the Settings box is open, and what the office said about the last change asked there.
+      settingsOpen: boolean
+      settingsNote: string
     }
   }
 }

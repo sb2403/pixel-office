@@ -31,6 +31,8 @@ import {
 import type { Self, SlotSeen } from './peers'
 import { HISTORY_MAX, SESSION_MAX, isRecord, jobRecord, recapOf, withRecord } from './recap'
 import { LEAD_MS, nowOf } from './render'
+import { CANNOT, MANY_COPIES, SETTINGS_HELP, USAGE, configKeyOf, parseSet, replyAfterSet, setReply, settingLines } from './settings'
+import type { Setting } from './settings'
 import { PANE, PANE_TITLE, PROBE_BOTTOM, PROBE_TOP } from './state'
 import { WAITING_TOOLS, detailOf, fullText, gist, stationFor, targetOf, todoCounts } from './stations'
 
@@ -459,6 +461,32 @@ async function endPeers($: EngineInterface, office: Office): Promise<void> {
   await $.fs.write(path, JSON.stringify(tombstoneOf(meta, now)))
 }
 
+// Changes one setting the way the `/config` menu does, and says how it went. pane.tsx and register.tsx each have
+// this: the engine follows `$` only into a function of the same file.
+async function changeSetting($: EngineInterface, setting: Setting, value: string): Promise<string> {
+  let keys: string[] = []
+  try {
+    keys = (await $.config.list()).map(row => row.key)
+  } catch {
+    // An engine without the listing: the key is the plain one.
+  }
+  const key = configKeyOf(keys, setting.field)
+  if (key === null) return setReply(setting, value, MANY_COPIES)
+  let deny: string | undefined
+  try {
+    deny = (await $.config.set({ key, value })).deny
+  } catch {
+    return setReply(setting, value, CANNOT)
+  }
+  let stored: unknown
+  try {
+    stored = (await $.config.list()).find(row => row.key === key)?.value
+  } catch {
+    // Not listed: the change is taken at its word.
+  }
+  return replyAfterSet(setting, value, deny, stored)
+}
+
 export const register: Register = (on, options) => {
   const autoOpen = String(options.autoOpen ?? 'on-first-subagent')
   const office: Office = {
@@ -525,7 +553,7 @@ export const register: Register = (on, options) => {
       })
     })
     await quietly(async () => {
-      await $.command.register({ name: 'office', description: 'Show or hide the pixel office' })
+      await $.command.register({ name: 'office', description: 'Show or hide the pixel office; /office settings lists its settings' })
     })
     await quietly(async () => {
       if (office.keepsHistory) await loadHistory($)
@@ -656,7 +684,15 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'office' }, async $ => {
+  on('command.run', { command: 'office' }, async ($, e) => {
+    // `/office settings` shows them, `/office set <name> <value>` changes one; `/office` alone shows or hides the pane.
+    const [verb = '', ...rest] = e.args.trim().split(/\s+/)
+    if (verb.toLowerCase() === 'settings') return { text: [...settingLines(options), SETTINGS_HELP].join('\n') }
+    if (verb.toLowerCase() === 'set') {
+      const request = parseSet(rest.join(' '))
+      return { text: 'error' in request ? request.error : await changeSetting($, request.setting, request.value) }
+    }
+    if (verb !== '') return { text: USAGE }
     const panes = await $.ui.panes()
     if (panes.some(pane => pane.id === PANE)) {
       await $.ui.close({ id: PANE })
@@ -682,5 +718,5 @@ export const register: Register = (on, options) => {
     return {}
   }).catch(($, e, next) => next(e))
 
-  registerPane(on, { isDebug: office.isDebug })
+  registerPane(on, { isDebug: office.isDebug, options })
 }
