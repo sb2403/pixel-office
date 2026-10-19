@@ -40,6 +40,8 @@ jobs:
         run: claude plugin validate --strict coordinator-guard
       - name: Validate the marketplace
         run: claude plugin validate .
+      - name: Check the plugin directory's listing rules
+        run: node scripts/check-listing.mjs
 
   pictures:
     name: README pictures match the drawing code

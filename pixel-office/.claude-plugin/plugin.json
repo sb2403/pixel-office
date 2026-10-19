@@ -1,6 +1,7 @@
 {
   "name": "pixel-office",
-  "version": "0.9.0",
+  "displayName": "Pixel Office",
+  "version": "0.9.1",
   "description": "A live pixel-art office showing what every agent in the session is doing",
   "author": { "name": "Spencer Barrett" },
   "license": "MIT",
